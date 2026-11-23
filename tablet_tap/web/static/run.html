@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>平板点按 · 运行</title>
+<style>
+  :root { --bg:#f4f5f7; --card:#fff; --line:#d9dce1; --text:#1c2026; --dim:#68707c; --blue:#1f6feb; --green:#1a7f37; --red:#cf222e; --amber:#9a6700; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 -apple-system, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; background:var(--bg); color:var(--text); }
+  header { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:10px; padding:8px 14px; background:#fff; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0 8px 0 0; }
+  a { color:var(--blue); text-decoration:none; }
+  .chip { padding:2px 9px; border-radius:11px; background:#eaecef; color:var(--dim); font-size:12px; white-space:nowrap; }
+  .chip.ok { background:#dafbe1; color:var(--green); } .chip.warn { background:#fff3cd; color:var(--amber); } .chip.bad { background:#ffe1e0; color:var(--red); }
+  #stop { margin-left:auto; padding:9px 26px; font-size:16px; font-weight:700; color:#fff; background:var(--red); border:0; border-radius:6px; cursor:pointer; }
+  main { display:grid; grid-template-columns:minmax(360px, 1fr) minmax(320px, 460px); gap:12px; padding:12px; align-items:start; }
+  @media (max-width:900px) { main { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; margin-bottom:12px; }
+  .card h2 { font-size:14px; margin:0 0 8px; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:6px 0; }
+  .hint { color:var(--dim); font-size:12px; margin:4px 0; }
+  input[type=text], input[type=number] { padding:7px 9px; border:1px solid var(--line); border-radius:6px; font:inherit; }
+  #text { flex:1; min-width:200px; font-size:17px; padding:10px 12px; } input[type=number] { width:64px; }
+  button { padding:7px 13px; border:1px solid var(--line); border-radius:6px; background:#f6f8fa; font:inherit; cursor:pointer; }
+  button:hover { background:#eef1f4; } button:disabled { opacity:.45; cursor:not-allowed; }
+  button.primary { background:var(--blue); border-color:var(--blue); color:#fff; font-weight:600; padding:10px 20px; font-size:16px; }
+  button.mic.on { background:var(--red); border-color:var(--red); color:#fff; }
+  .presets button { border-radius:15px; padding:4px 12px; } .presets .x { color:var(--dim); margin-left:6px; }
+  #missing { color:var(--amber); margin:6px 0 0; padding-left:18px; } #missing:empty { display:none; }
+  .banner { display:none; align-items:baseline; gap:10px; padding:8px 12px; border-radius:6px; background:#eef4ff; margin-bottom:10px; flex-wrap:wrap; }
+  .banner b { font-size:15px; } .banner.ok { background:#dafbe1; } .banner.bad { background:#ffe1e0; } .banner.warn { background:#fff3cd; }
+  .step { display:grid; grid-template-columns:200px 1fr; gap:12px; padding:10px 0; border-top:1px solid var(--line); } .step:first-child { border-top:0; }
+  @media (max-width:560px) { .step { grid-template-columns:1fr; } }
+  .step img { width:100%; border-radius:5px; background:#1b1e23; cursor:zoom-in; display:block; min-height:60px; }
+  .step .did { font-weight:600; } .step .thought { color:#3b4250; margin:3px 0; white-space:pre-wrap; } .step .meta { color:var(--dim); font-size:12px; }
+  details summary { color:var(--dim); font-size:12px; cursor:pointer; } pre { white-space:pre-wrap; font-size:12px; background:#f6f8fa; padding:8px; border-radius:6px; margin:4px 0 0; overflow:auto; }
+  .imgbox { position:relative; background:#1b1e23; border-radius:6px; min-height:140px; overflow:hidden; } .imgbox img { display:block; width:100%; }
+  .imgbox .empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#9aa3ad; text-align:center; padding:8px; }
+  .hist { padding:5px 0; border-top:1px solid var(--line); cursor:pointer; display:flex; gap:8px; } .hist:first-child { border-top:0; } .hist:hover { background:#f6f8fa; }
+  .hist .when { color:var(--dim); font-size:12px; margin-left:auto; white-space:nowrap; }
+  #zoom { position:fixed; inset:0; background:rgba(0,0,0,.85); display:none; z-index:20; align-items:center; justify-content:center; cursor:zoom-out; } #zoom img { max-width:96vw; max-height:96vh; }
+  #toast { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); background:#24292f; color:#fff; padding:9px 16px; border-radius:6px; display:none; z-index:9; max-width:80vw; }
+</style>
+</head>
+<body>
+<header>
+  <h1>平板点按 · 运行</h1>
+  <a id="to-console" href="/console">← 标定控制台</a>
+  <span class="chip" id="c-arm">机械臂</span>
+  <span class="chip" id="c-vlm">模型</span>
+  <span class="chip" id="c-asr">语音</span>
+  <span class="chip" id="c-busy">空闲</span>
+  <button id="stop" title="Esc">停止</button>
+</header>
+<main>
+<div>
+  <div class="card">
+    <h2>指令</h2>
+    <div class="row">
+      <input type="text" id="text" maxlength="200" autocomplete="off" placeholder="例如：打开音乐，播放音乐">
+      <button class="primary" id="go">执行</button>
+    </div>
+    <div class="row">
+      <button class="mic" id="mic">🎤 用这台设备的麦克风说</button>
+      <button class="mic" id="mic-pc">🎙 用机器人电脑的麦克风说</button>
+      <label><input type="checkbox" id="auto"> 说完直接执行</label>
+      <label><input type="checkbox" id="speak" checked> 语音播报结果</label>
+    </div>
+    <div class="row presets" id="presets"></div>
+    <div class="row">
+      <label>最多步数 <input type="number" id="max-steps" value="15" min="1" max="40"></label>
+      <label>每步后等 <input type="number" id="settle" value="0.8" min="0" max="10" step="0.1"> 秒</label>
+      <button id="keep">把这条加进常用</button>
+    </div>
+    <ul id="missing"></ul>
+  </div>
+  <div class="card">
+    <h2 id="run-title">执行过程</h2>
+    <div class="banner" id="banner"><b id="b-status"></b><span id="b-text"></span></div>
+    <div id="steps"></div>
+    <div class="hint" id="steps-empty">还没有执行过指令。每一步会在这里显示相机看到的屏幕、模型的想法和机械臂做的动作。</div>
+  </div>
+</div>
+<div>
+  <div class="card"><h2>矫正后的屏幕（智能体看到的样子）</h2><div class="imgbox"><img id="screen" hidden><div class="empty" id="screen-empty">相机没有打开</div></div></div>
+  <div class="card"><h2>相机画面</h2><div class="imgbox"><img id="camera" hidden><div class="empty" id="camera-empty">相机没有打开</div></div></div>
+  <div class="card"><h2>键盘标定 <span class="chip" id="c-kb"></span></h2>
+    <div class="hint">打字（搜索歌名、输入文字）需要知道键盘的键在哪里，只需标一次。先在平板上点开一个输入框让键盘显示出来（26 键拼音），再按下面按钮，按提示在“矫正后的屏幕”图上依次点每个键的中心。</div>
+    <div class="row"><button id="kb-start">开始标定</button><button id="kb-clear">清除</button><span class="hint" id="kb-hint"></span></div></div>
+  <div class="card"><h2>历史</h2><div id="history"></div></div>
+</div>
+</main>
+<div id="zoom"><img></div><div id="toast"></div>
+<script>
+const $ = id => document.getElementById(id);
+const token = new URLSearchParams(location.search).get("token") || "";
+const q = path => path + (token ? (path.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token) : "");
+if (token) $("to-console").href = q("/console");
+const STATUS = {running:"正在执行", success:"完成", answer:"完成（有回答）", failure:"没有完成", need_user:"需要人处理", unsupported:"需要打字，机械臂还不会",
+  max_steps:"步数用完", parse_error:"模型输出看不懂", llm_error:"模型服务出错", stopped:"已停止", error:"出错", exception:"出错"};
+const TONE = {running:"", success:"ok", answer:"ok", need_user:"warn", unsupported:"warn", max_steps:"warn", stopped:"warn", failure:"bad", parse_error:"bad", llm_error:"bad", error:"bad", exception:"bad"};
+let shown = null, following = true, state = null, announced = new Set(), firstPoll = true;
+
+function toast(text) { const t = $("toast"); t.textContent = text; t.style.display = "block"; clearTimeout(t.timer); t.timer = setTimeout(() => t.style.display = "none", 4000); }
+async function api(path, options) {
+  const response = await fetch(q(path), options);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || ("请求失败 " + response.status));
+  return data;
+}
+const post = (path, data) => api(path, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data)});
+
+// ---- the instruction -------------------------------------------------------------------------------------------------
+async function start() {
+  const instruction = $("text").value.trim();
+  if (!instruction) { toast("先输入指令"); return; }
+  try {
+    await post("/api/run/start", {instruction, max_steps:+$("max-steps").value, settle_s:+$("settle").value});
+    following = true; shown = null; $("steps").innerHTML = ""; poll();
+  } catch (e) { toast(e.message); }
+}
+$("go").onclick = start;
+$("text").addEventListener("keydown", e => { if (e.key === "Enter" && !e.isComposing) start(); });
+$("stop").onclick = async () => { try { await post("/api/stop", {}); toast("已请求停止：机械臂停在当前位置"); } catch (e) { toast(e.message); } };
+document.addEventListener("keydown", e => { if (e.key === "Escape") { if ($("zoom").style.display === "flex") $("zoom").style.display = "none"; else $("stop").click(); } });
+
+async function loadPresets() { try { showPresets((await api("/api/run/presets")).presets); } catch (e) { toast(e.message); } }
+let presets = [];
+function showPresets(list) {
+  presets = list; const box = $("presets"); box.innerHTML = "";
+  list.forEach(text => {
+    const b = document.createElement("button"); b.textContent = text; b.title = "点一下填进输入框";
+    b.onclick = () => { $("text").value = text; $("text").focus(); };
+    const x = document.createElement("span"); x.className = "x"; x.textContent = "×"; x.title = "从常用里去掉";
+    x.onclick = async e => { e.stopPropagation(); try { showPresets((await post("/api/run/presets", {presets: presets.filter(p => p !== text)})).presets); } catch (err) { toast(err.message); } };
+    b.append(x); box.append(b);
+  });
+}
+$("keep").onclick = async () => {
+  const text = $("text").value.trim(); if (!text) return;
+  try { showPresets((await post("/api/run/presets", {presets: [...presets, text]})).presets); } catch (e) { toast(e.message); }
+};
+
+// ---- speech ------------------------------------------------------------------------------------------------------------
+async function heard(text) {
+  if (!text.trim()) { toast("没有听清"); return; }
+  $("text").value = text.replace(/[。！？.!?]+$/, "");
+  if ($("auto").checked) start(); else toast("听到：" + text);
+}
+let rec = null;
+$("mic").onclick = async () => {
+  if (rec) { finishRecording(); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    toast("浏览器只在 https 或 localhost 下允许用麦克风。在机器人电脑上用 http://localhost:" + (location.port || 80) + "/run 打开，或用旁边的“机器人电脑的麦克风”。"); return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio:{channelCount:1, echoCancellation:true, noiseSuppression:true}});
+    const ctx = new AudioContext(), source = ctx.createMediaStreamSource(stream), node = ctx.createScriptProcessor(4096, 1, 1), chunks = [];
+    node.onaudioprocess = e => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+    source.connect(node); node.connect(ctx.destination);
+    rec = {stream, ctx, node, chunks}; $("mic").classList.add("on"); $("mic").textContent = "■ 说完了";
+  } catch (e) { toast("打不开麦克风：" + e.message); }
+};
+async function finishRecording() {
+  const {stream, ctx, node, chunks} = rec; rec = null;
+  $("mic").classList.remove("on"); $("mic").textContent = "🎤 用这台设备的麦克风说";
+  node.disconnect(); stream.getTracks().forEach(t => t.stop()); const rate = ctx.sampleRate; ctx.close();
+  const wav = encodeWav(chunks, rate, 16000);
+  if (!wav) { toast("没有录到声音"); return; }
+  try { heard((await api("/api/run/transcribe", {method:"POST", headers:{"Content-Type":"audio/wav"}, body:wav})).text); } catch (e) { toast(e.message); }
+}
+function encodeWav(chunks, from, to) {
+  const n = chunks.reduce((sum, c) => sum + c.length, 0); if (n < from * 0.2) return null;
+  const all = new Float32Array(n); let at = 0; for (const c of chunks) { all.set(c, at); at += c.length; }
+  const ratio = from / to, out = new Int16Array(Math.floor(n / ratio));
+  for (let i = 0; i < out.length; i++) {  // the mean of the samples that fall into one output sample
+    const a = Math.floor(i * ratio), b = Math.max(a + 1, Math.floor((i + 1) * ratio)); let sum = 0;
+    for (let j = a; j < b && j < n; j++) sum += all[j];
+    out[i] = Math.max(-1, Math.min(1, sum / (b - a))) * 32767;
+  }
+  const buf = new ArrayBuffer(44 + out.length * 2), v = new DataView(buf), w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, "RIFF"); v.setUint32(4, 36 + out.length * 2, true); w(8, "WAVE"); w(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, to, true); v.setUint32(28, to * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, out.length * 2, true);
+  for (let i = 0; i < out.length; i++) v.setInt16(44 + i * 2, out[i], true);
+  return new Blob([buf], {type:"audio/wav"});
+}
+$("mic-pc").onclick = async () => {
+  const stopping = state && state.recording;
+  try {
+    const answer = await post("/api/run/mic", {action: stopping ? "stop" : "start"});
+    if (stopping) heard(answer.text); poll();
+  } catch (e) { toast(e.message); poll(); }
+};
+
+// ---- the steps ---------------------------------------------------------------------------------------------------------
+const esc = s => { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; };
+function addStep(run, s) {
+  const div = document.createElement("div"); div.className = "step";
+  const src = q(`/api/run/${run.id}/step_${s.step}.jpg?anno=${s.annotated ? 1 : 0}`);
+  const tail = [s.llm_s ? `模型 ${s.llm_s.toFixed(1)} 秒` : "", s.device_s ? `动作 ${s.device_s.toFixed(1)} 秒` : "", s.note].filter(Boolean).join("，");
+  div.innerHTML = `<img src="${src}" alt="第 ${s.step} 步" loading="lazy"><div><div class="did">${s.step}. ${esc(s.did || "")}</div><div class="thought">${esc(s.thought || "")}</div>` +
+    `<div class="meta">${esc(tail)}</div>${s.output ? `<details><summary>模型原始输出</summary><pre>${esc(s.output)}</pre></details>` : ""}</div>`;
+  div.querySelector("img").onclick = e => { $("zoom").firstElementChild.src = e.target.src; $("zoom").style.display = "flex"; };
+  $("steps").append(div);
+}
+$("zoom").onclick = () => $("zoom").style.display = "none";
+function showRun(run, fresh) {
+  if (fresh) { $("steps").innerHTML = ""; $("run-title").textContent = "“" + run.instruction + "”"; shown = {id: run.id, n: 0}; }
+  run.steps.forEach(s => addStep(run, s)); shown.n = run.n_steps;
+  $("steps-empty").style.display = run.n_steps ? "none" : "block";
+  if (!run.n_steps && run.status === "running") $("steps-empty").textContent = "正在拍第一张截图（手臂先回停靠位，不挡相机）…";
+  const b = $("banner"); b.style.display = "flex"; b.className = "banner " + (TONE[run.status] || "");
+  $("b-status").textContent = STATUS[run.status] || run.status;
+  $("b-text").textContent = (run.answer || "") + (run.elapsed_s != null ? `（${run.n_steps} 步，${run.elapsed_s} 秒）` : "");
+  if (run.status !== "running" && !announced.has(run.id) && fresh !== "history") {
+    announced.add(run.id); loadHistory();
+    if ($("speak").checked && run.elapsed_s != null && state && window.speechSynthesis) speechSynthesis.speak(Object.assign(new SpeechSynthesisUtterance((STATUS[run.status] || "") + "。" + (run.answer || "")), {lang:"zh-CN"}));
+  }
+}
+async function loadHistory() {
+  try {
+    const {runs} = await api("/api/run/history"); const box = $("history"); box.innerHTML = runs.length ? "" : '<div class="hint">还没有</div>';
+    runs.forEach(r => {
+      const d = document.createElement("div"); d.className = "hist";
+      d.innerHTML = `<span class="chip ${TONE[r.status] || ""}">${esc(STATUS[r.status] || r.status || "")}</span><span>${esc(r.instruction || "")}</span><span class="when">${esc((r.started || "").replace("T", " ").slice(5, 16))} · ${r.steps || 0} 步</span>`;
+      d.onclick = async () => { try { following = false; showRun(await api("/api/run/" + r.id), "history"); window.scrollTo({top:0, behavior:"smooth"}); } catch (e) { toast(e.message); } };
+      box.append(d);
+    });
+  } catch (e) { /* the next finished run asks again */ }
+}
+
+// ---- the on-screen keyboard ---------------------------------------------------------------------------------------------
+const KB_NAMES = {space:"空格", backspace:"退格"};
+let kbOrder = [], kbClicks = {}, kbAt = -1;
+async function loadKeyboard() {
+  try { const k = await api("/api/run/keyboard"); kbOrder = k.order; showKb(k.anchors); } catch (e) { /* not yet */ }
+}
+function showKb(anchors) { $("c-kb").textContent = anchors ? "已标定" : "未标定"; $("c-kb").className = "chip " + (anchors ? "ok" : "warn"); }
+function nextKey() {
+  kbAt++;
+  if (kbAt >= kbOrder.length) { saveKb(); return; }
+  const name = KB_NAMES[kbOrder[kbAt]] || kbOrder[kbAt].toUpperCase();
+  $("kb-hint").textContent = `点 ${name} 键的中心（${kbAt + 1}/${kbOrder.length}）`;
+  $("screen").style.cursor = "crosshair";
+}
+$("kb-start").onclick = () => { kbClicks = {}; kbAt = -1; nextKey(); };
+$("screen").addEventListener("click", e => {
+  if (kbAt < 0 || kbAt >= kbOrder.length) return;
+  const r = e.target.getBoundingClientRect();
+  kbClicks[kbOrder[kbAt]] = [Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), Math.max(0, Math.min(1, (e.clientY - r.top) / r.height))];
+  nextKey();
+});
+async function saveKb() {
+  kbAt = -1; $("screen").style.cursor = "";
+  try { const k = await post("/api/run/keyboard", {anchors: kbClicks}); showKb(k.anchors); $("kb-hint").textContent = ""; toast("键盘标定已保存"); }
+  catch (e) { toast(e.message); $("kb-hint").textContent = e.message; }
+}
+$("kb-clear").onclick = async () => { try { showKb((await post("/api/run/keyboard", {anchors: null})).anchors); } catch (e) { toast(e.message); } };
+loadKeyboard();
+
+// ---- polling -------------------------------------------------------------------------------------------------------------
+const chip = (id, text, tone) => { $(id).textContent = text; $(id).className = "chip " + tone; };
+let polling = false;
+async function poll() {
+  if (polling) return; polling = true;
+  try {
+    const params = shown && following ? `?id=${shown.id}&since=${shown.n}` : "";
+    state = await api("/api/run/state" + params);
+    const s = state.services, arm = !state.missing.some(m => m.startsWith("机械臂"));
+    chip("c-arm", (state.fake ? "模拟 · " : "") + (arm ? "机械臂：就绪" : "机械臂：未就绪"), arm ? "ok" : "warn");
+    chip("c-vlm", "模型：" + (s.vlm.ok ? "在线" : "离线"), s.vlm.ok ? "ok" : "bad"); $("c-vlm").title = s.vlm.detail;
+    chip("c-asr", "语音：" + (s.asr.ok ? "在线" : "离线"), s.asr.ok ? "ok" : "warn"); $("c-asr").title = s.asr.detail;
+    chip("c-busy", state.stopping ? "正在停止…" : state.busy || "空闲", state.busy ? "warn" : "ok");
+    if (state.fault) toast("机械臂：" + state.fault);
+    $("go").disabled = !!state.busy || state.missing.length > 0; $("missing").innerHTML = state.missing.map(m => `<li>${esc(m)}</li>`).join("");
+    $("mic-pc").classList.toggle("on", state.recording); $("mic-pc").textContent = state.recording ? "■ 说完了" : "🎙 用机器人电脑的麦克风说";
+    const run = state.run;
+    if (run && following) {
+      if (firstPoll && run.status !== "running") announced.add(run.id);  // finished before the page was opened: not news
+      showRun(run, shown && shown.id === run.id ? "" : "new");
+    }
+    firstPoll = false;
+    for (const kind of ["screen", "camera"]) {
+      const img = $(kind); if (state.camera_open) { img.hidden = false; $(kind + "-empty").style.display = "none"; img.src = q(`/api/${kind}.jpg?w=800&t=${Date.now()}`); }
+      else { img.hidden = true; $(kind + "-empty").style.display = "flex"; }
+    }
+  } catch (e) { chip("c-busy", "连不上控制台", "bad"); }
+  polling = false;
+}
+$("screen").onerror = () => { $("screen").hidden = true; $("screen-empty").style.display = "flex"; $("screen-empty").textContent = "相机还没有对屏幕标定"; };
+loadPresets(); loadHistory(); poll(); setInterval(poll, 1000);
+</script>
+</body>
+</html>

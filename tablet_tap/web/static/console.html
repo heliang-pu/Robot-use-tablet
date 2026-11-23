@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>平板点按 · 标定控制台</title>
+<style>
+  :root { --bg:#f4f5f7; --card:#fff; --line:#d9dce1; --text:#1c2026; --dim:#68707c; --blue:#1f6feb; --green:#1a7f37; --red:#cf222e; --amber:#9a6700; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.5 -apple-system, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; background:var(--bg); color:var(--text); }
+  header { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:10px; padding:8px 14px; background:#fff; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0 8px 0 0; }
+  .chip { padding:2px 9px; border-radius:11px; background:#eaecef; color:var(--dim); font-size:12px; white-space:nowrap; }
+  .chip.ok { background:#dafbe1; color:var(--green); } .chip.warn { background:#fff3cd; color:var(--amber); } .chip.bad { background:#ffe1e0; color:var(--red); }
+  #stop { margin-left:auto; padding:9px 26px; font-size:16px; font-weight:700; color:#fff; background:var(--red); border:0; border-radius:6px; cursor:pointer; }
+  #stop:active { filter:brightness(.85); }
+  main { display:grid; grid-template-columns:minmax(340px, 470px) 1fr; gap:12px; padding:12px; align-items:start; }
+  @media (max-width:900px) { main { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin-bottom:12px; }
+  .card h2 { font-size:14px; margin:0 0 8px; display:flex; align-items:center; gap:8px; }
+  .card h2 .n { display:inline-flex; width:20px; height:20px; border-radius:50%; background:var(--blue); color:#fff; font-size:12px; align-items:center; justify-content:center; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:6px 0; }
+  label { color:var(--dim); } .hint { color:var(--dim); font-size:12px; margin:4px 0; }
+  input[type=text], input[type=number], select { padding:5px 7px; border:1px solid var(--line); border-radius:5px; font:inherit; }
+  input[type=number] { width:76px; }
+  button { padding:6px 12px; border:1px solid var(--line); border-radius:5px; background:#f6f8fa; font:inherit; cursor:pointer; }
+  button:hover { background:#eef1f4; } button:disabled { opacity:.45; cursor:not-allowed; }
+  button.primary { background:var(--blue); border-color:var(--blue); color:#fff; } button.primary:hover { filter:brightness(1.08); }
+  .pad { display:grid; grid-template-columns:repeat(3, 58px); gap:5px; } .pad button { padding:9px 0; }
+  .pads { display:flex; gap:18px; flex-wrap:wrap; } .pads h3 { font-size:12px; color:var(--dim); margin:0 0 4px; font-weight:400; }
+  kbd { font:11px ui-monospace, monospace; color:var(--dim); margin-left:3px; }
+  .steps label { color:var(--text); margin-right:8px; }
+  table { border-collapse:collapse; } td, th { padding:2px 10px 2px 0; text-align:left; font-variant-numeric:tabular-nums; }
+  .imgbox { position:relative; background:#1b1e23; border-radius:6px; min-height:120px; overflow:hidden; }
+  .imgbox img { display:block; width:100%; } .imgbox .empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#9aa3ad; }
+  #log { height:240px; overflow:auto; background:#0f1217; color:#d6dbe1; font:12px/1.5 ui-monospace, "SF Mono", Menlo, monospace; padding:8px; border-radius:6px; white-space:pre-wrap; }
+  #log .t { color:#6e7885; margin-right:6px; }
+  #toast { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); background:#24292f; color:#fff; padding:9px 16px; border-radius:6px; display:none; z-index:9; max-width:80vw; }
+  .bar { height:6px; background:#e6e8eb; border-radius:3px; overflow:hidden; margin-top:6px; } .bar div { height:100%; background:var(--blue); width:0; }
+  .mono { font-family:ui-monospace, Menlo, monospace; font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>平板点按 · 标定控制台</h1>
+  <span class="chip" id="c-arm">机械臂：未连接</span>
+  <span class="chip" id="c-page">平板标定页：未连接</span>
+  <span class="chip" id="c-cam">相机：未打开</span>
+  <span class="chip" id="c-busy">空闲</span>
+  <a id="to-run" href="/run" style="display:none; margin-left:6px">运行页 →</a>
+  <button id="stop" title="空格 / Esc">停止</button>
+</header>
+<main>
+<div>
+  <div class="card">
+    <h2><span class="n">1</span>连接机械臂</h2>
+    <div class="row">
+      <select id="channel"><option value="can_r_follower">右从臂</option><option value="can_l_follower">左从臂</option></select>
+      <select id="mode"><option value="read_only">只读</option><option value="command">可运动</option></select>
+      <label><input type="checkbox" id="attended"> 有人在急停旁边</label>
+    </div>
+    <div class="row"><button class="primary" id="connect">连接</button><button id="disconnect">断开</button></div>
+    <div class="row"><label>笔尖超出指尖</label><input type="number" id="tip" step="1"> mm
+      <label>下压深度</label><input type="number" id="press" step="0.1"> mm <button id="save-set">保存</button></div>
+    <div class="hint">夹爪直接夹笔（没有带簧片的笔夹）时下压深度用 0.5–0.8 mm；带笔夹用 2.5 mm。</div>
+    <div class="mono" id="arm-info"></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">2</span>点动和记点</h2>
+    <div class="row steps">步长：
+      <label><input type="radio" name="step" value="1"> 0.2 mm</label><label><input type="radio" name="step" value="2"> 1 mm</label>
+      <label><input type="radio" name="step" value="3" checked> 5 mm</label><label><input type="radio" name="step" value="4"> 20 mm</label>
+    </div>
+    <div class="pads">
+      <div><h3>平移（基座：前 x、左 y、上 z）</h3>
+        <div class="pad">
+          <button data-key="r">上<kbd>R</kbd></button><button data-key="w">前<kbd>W</kbd></button><button data-key="e">沿笔伸<kbd>E</kbd></button>
+          <button data-key="a">左<kbd>A</kbd></button><span></span><button data-key="d">右<kbd>D</kbd></button>
+          <button data-key="f">下<kbd>F</kbd></button><button data-key="s">后<kbd>S</kbd></button><button data-key="c">沿笔收<kbd>C</kbd></button>
+        </div></div>
+      <div><h3>转动（绕笔尖）</h3>
+        <div class="pad">
+          <button data-key="u">自转+<kbd>U</kbd></button><button data-key="i">俯仰+<kbd>I</kbd></button><button data-key="o">自转−<kbd>O</kbd></button>
+          <button data-key="j">横滚+<kbd>J</kbd></button><span></span><button data-key="l">横滚−<kbd>L</kbd></button>
+          <span></span><button data-key="k">俯仰−<kbd>K</kbd></button><span></span>
+        </div></div>
+    </div>
+    <div class="row"><button data-key="G">夹爪张开</button><button data-key="g">夹爪夹紧</button><button data-key="p">记为停靠位姿</button></div>
+    <div class="row"><button class="primary" data-key="z">下探记点 <kbd style="color:#dbe7ff">Z</kbd></button>
+      <button data-key="x">删除最后一个触点</button></div>
+    <div class="hint">先把笔尖点动到屏幕上方 1–2 cm、大致垂直于屏幕，再按“下探记点”：沿笔轴慢速下探，屏幕报告触摸就停并记录，然后抬起 15 mm。四角附近和中间各一次。</div>
+    <div id="touches" class="mono"></div>
+    <div class="row"><button class="primary" id="fit">拟合屏幕平面</button><span id="map-info" class="mono"></span></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">3</span>相机</h2>
+    <div class="row"><input type="text" id="camspec" style="flex:1; min-width:220px" value="realsense:262422077281:1920x1080" title="realsense:序列号:宽x高；顶部相机是 262422077281">
+      <button id="cam-open">打开</button><button id="cam-close">释放</button></div>
+    <div class="row"><button class="primary" id="view">相机标定（拍标定页上的码）</button><span id="view-info" class="mono"></span></div>
+    <div class="row"><button class="primary" id="place">相机估计屏幕位置</button>
+      <label>屏幕</label><input type="number" id="pw" value="236.9" step="0.1"> × <input type="number" id="ph" value="148.1" step="0.1"> mm
+      <label>笔外倾</label><input type="number" id="ptilt" value="15" step="1" min="0" max="25">°</div>
+    <div class="hint">做相机标定时机械臂要在停靠位姿，不能挡住平板。</div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">4</span>自动探触和精度测试</h2>
+    <div class="row"><label>网格</label><input type="number" id="nu" value="5" min="2" max="9"> × <input type="number" id="nv" value="4" min="2" max="9">
+      <label>边距</label><input type="number" id="margin" value="0.08" step="0.01"></div>
+    <div class="row"><button class="primary" id="probe">自动探触并重新拟合</button><label>最深</label><input type="number" id="depth" value="6" step="1"> mm</div>
+    <div class="row"><button class="primary" id="taptest">点按精度测试</button><label>重复</label><input type="number" id="repeat" value="1" min="1" max="10"> 遍</div>
+    <div class="bar"><div id="bar"></div></div>
+    <div id="tap-summary" class="mono" style="margin-top:6px"></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">5</span>单步动作</h2>
+    <div class="row"><button id="park">回停靠位</button><button id="hover">到屏幕上方</button><button id="home">回桌面</button><button id="back">返回</button></div>
+    <div class="row"><label>u</label><input type="number" id="tu" value="0.5" step="0.05" min="0" max="1"><label>v</label><input type="number" id="tv" value="0.5" step="0.05" min="0" max="1">
+      <button id="tap">点一下</button><label><input type="checkbox" id="tap-park"> 点完回停靠位</label></div>
+    <div class="row"><label>平板标定页显示</label><button data-page="markers">标定码</button><button data-page="blank">空白</button></div>
+  </div>
+</div>
+
+<div>
+  <div class="card">
+    <h2>相机画面 <span class="hint">绿框 = 标定页上的码，橙框 = 桌面上的码，紫框 = 已标定的屏幕</span></h2>
+    <div class="imgbox"><img id="cam" alt="" style="cursor:crosshair"><div class="empty" id="cam-empty">相机未打开</div></div>
+    <div class="mono" id="cam-info" style="margin-top:6px"></div>
+  </div>
+  <div class="card">
+    <h2>点哪打哪 <label style="font-weight:400"><input type="checkbox" id="click-tap"> 点图就让机械臂去点（上面的相机画面和这张图都行）</label>
+      <label style="font-weight:400"><input type="checkbox" id="click-park" checked> 点完让开</label></h2>
+    <div class="imgbox"><img id="screen" alt="" style="cursor:crosshair"><div class="empty" id="screen-empty">做完相机标定后显示</div></div>
+  </div>
+  <div class="card"><h2>记录</h2><div id="log"></div></div>
+</div>
+</main>
+<div id="toast"></div>
+<script>
+const $ = id => document.getElementById(id);
+const token = new URLSearchParams(location.search).get('token') || '';
+const withToken = url => token ? url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token) : url;
+let logSince = 0, state = null, filled = false, toastTimer = null;
+
+function toast(text) {
+  $('toast').textContent = text; $('toast').style.display = 'block';
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').style.display = 'none', 3500);
+}
+async function cmd(body) {
+  try {
+    const response = await fetch(withToken('/api/cmd'), {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    if (!response.ok) toast((await response.json()).error || ('请求失败 ' + response.status));
+  } catch (error) { toast('连不上控制台服务：' + error); }
+}
+function stopNow() { fetch(withToken('/api/stop'), {method: 'POST'}).catch(() => toast('停止指令没有发出去！直接按急停')); }
+const step = () => document.querySelector('input[name=step]:checked').value;
+const num = id => Number($(id).value);
+
+$('stop').onclick = stopNow;
+$('connect').onclick = () => cmd({cmd: 'connect', channel: $('channel').value, mode: $('mode').value, attended: $('attended').checked});
+$('disconnect').onclick = () => cmd({cmd: 'disconnect'});
+$('save-set').onclick = () => cmd({cmd: 'set', tip_len_mm: $('tip').value, press_mm: $('press').value});
+$('fit').onclick = () => cmd({cmd: 'fit'});
+$('cam-open').onclick = () => cmd({cmd: 'camera_open', spec: $('camspec').value});
+$('cam-close').onclick = () => cmd({cmd: 'camera_close'});
+$('view').onclick = () => cmd({cmd: 'view'});
+$('place').onclick = () => cmd({cmd: 'place', width_mm: num('pw'), height_mm: num('ph'), tilt_deg: num('ptilt')});
+$('probe').onclick = () => confirm('机械臂将自动在屏幕上探触 ' + num('nu') * num('nv') + ' 个点。确认有人在急停旁边？') &&
+  cmd({cmd: 'probe', nu: num('nu'), nv: num('nv'), margin: num('margin'), depth_mm: num('depth')});
+$('taptest').onclick = () => confirm('机械臂将点按 ' + num('nu') * num('nv') * num('repeat') + ' 次。确认有人在急停旁边？') &&
+  cmd({cmd: 'taptest', nu: num('nu'), nv: num('nv'), margin: num('margin'), repeat: num('repeat')});
+$('park').onclick = () => (state && state.place && state.place.where !== 'unknown' ||
+  confirm('将从当前位姿沿关节空间直线低速回停靠位姿，这条路径不做碰撞检查。确认路径上没有障碍？')) && cmd({cmd: 'park'});
+$('hover').onclick = () => cmd({cmd: 'hover'});
+$('home').onclick = () => cmd({cmd: 'home'});
+$('back').onclick = () => cmd({cmd: 'back'});
+$('tap').onclick = () => cmd({cmd: 'tap', u: num('tu'), v: num('tv'), park: $('tap-park').checked});
+document.querySelectorAll('[data-key]').forEach(button => button.onclick = () => cmd({cmd: 'key', key: button.dataset.key, step: step()}));
+document.querySelectorAll('[data-page]').forEach(button => button.onclick = () => cmd({cmd: 'page_mode', mode: button.dataset.page}));
+function clickPoint(event, on) {   // the arm goes where the picture was clicked
+  if (!$('click-tap').checked) return;
+  const box = event.currentTarget.getBoundingClientRect();
+  const x = (event.clientX - box.left) / box.width, y = (event.clientY - box.top) / box.height;
+  if (x < 0 || x > 1 || y < 0 || y > 1) return;
+  if (on === 'screen') { $('tu').value = x.toFixed(3); $('tv').value = y.toFixed(3); }
+  cmd({cmd: 'point', on, x, y, park: $('click-park').checked});
+}
+$('screen').onclick = event => clickPoint(event, 'screen');
+$('cam').onclick = event => clickPoint(event, 'camera');
+document.addEventListener('keydown', event => {
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(event.target.tagName) || event.ctrlKey || event.metaKey || event.altKey) return;
+  if (event.key === ' ' || event.key === 'Escape') { event.preventDefault(); stopNow(); return; }
+  if (event.repeat) return;   // one press, one step: a held key must not pile up motion
+  if ('1234'.includes(event.key)) { document.querySelector('input[name=step][value="' + event.key + '"]').checked = true; return; }
+  const key = event.key.length === 1 && 'wasdrfecijkluozxpgG'.includes(event.key) ? event.key : null;
+  if (key) { event.preventDefault(); cmd({cmd: 'key', key, step: step()}); }
+});
+
+function chip(id, text, kind) { const element = $(id); element.textContent = text; element.className = 'chip' + (kind ? ' ' + kind : ''); }
+function render(s) {
+  state = s;
+  const arm = s.arm, modeName = {command: '可运动', read_only: '只读', fake: '模拟'}[arm.mode] || '';
+  chip('c-arm', arm.connected ? `机械臂：${arm.channel || ''} ${modeName}` : '机械臂：未连接', arm.connected ? (s.fault ? 'bad' : 'ok') : '');
+  const page = s.page, online = page.page_age_s !== null && page.page_age_s < 3 || (s.fake && page.screen);
+  chip('c-page', !page.screen ? '平板标定页：未连接' : !online ? '平板标定页：掉线' :
+    (page.screen.covers_display ? '平板标定页：全屏' : '平板标定页：没有铺满全屏'), !page.screen ? '' : !online ? 'bad' : page.screen.covers_display ? 'ok' : 'warn');
+  const cam = s.camera;
+  chip('c-cam', !cam.open ? '相机：未打开' : cam.error ? '相机：出错' : `相机：${cam.size ? cam.size.join('×') : '…'}${cam.calibrated ? ' 已标定' : ''}`,
+    !cam.open ? '' : cam.error ? 'bad' : cam.calibrated ? 'ok' : 'warn');
+  $('to-run').style.display = s.run_page ? 'inline' : 'none'; $('to-run').href = withToken('/run');
+  chip('c-busy', s.stopping ? '正在停止…' : s.busy ? '正在：' + s.busy + (s.progress ? ` ${s.progress.i}/${s.progress.n}` : '') : '空闲', s.busy ? 'warn' : 'ok');
+  $('bar').style.width = s.progress ? (100 * s.progress.i / s.progress.n) + '%' : '0';
+  if (!filled) { $('tip').value = s.setup.tip_len_mm; $('press').value = s.setup.press_mm; if (s.setup.camera) $('camspec').value = s.setup.camera;
+    if (arm.channel) $('channel').value = arm.channel; filled = true; }
+  let info = s.fault ? '故障：' + s.fault + '\n' : '';
+  if (arm.q) {
+    info += `关节 (rad)  ${arm.q.map(x => x.toFixed(3)).join('  ')}\n笔尖 (mm)   x ${arm.tip_mm[0]}  y ${arm.tip_mm[1]}  z ${arm.tip_mm[2]}`;
+    if (s.place) info += s.place.u === undefined ? '\n位置：停靠位姿' :
+      `\n相对屏幕   u ${s.place.u.toFixed(3)}  v ${s.place.v.toFixed(3)}  高 ${s.place.height_mm} mm（${{park: '停靠位姿', hover: '屏幕上方', unknown: '位置未知'}[s.place.where]}）`;
+  }
+  info += `\n停靠位姿：${s.setup.park_set ? '已记录' : '未记录'}`;
+  $('arm-info').textContent = info; $('arm-info').style.whiteSpace = 'pre';
+  $('touches').innerHTML = s.touches.length ? '<table><tr><th>触点</th><th>u</th><th>v</th></tr>' +
+    s.touches.map((t, i) => `<tr><td>${i + 1}</td><td>${t.u.toFixed(4)}</td><td>${t.v.toFixed(4)}</td></tr>`).join('') + '</table>' : '还没有触点（至少 4 个）';
+  const m = s.setup.screen_map;
+  $('map-info').textContent = !m ? '还没有屏幕平面' : m.source === 'camera' ? `${m.width_mm} × ${m.height_mm} mm，倾角 ${m.tilt_deg}°（相机估计，还没探触：先做第 4 步的自动探触）` :
+    `${m.width_mm} × ${m.height_mm} mm，倾角 ${m.tilt_deg}°，残差 ${m.residual_mm === null ? '—' : m.residual_mm.toFixed(2)} mm（${m.n_points} 点）`;
+  const view = s.results.view;
+  $('view-info').textContent = view ? `重投影 ${view.reprojection_px.toFixed(2)} px，屏幕宽 ${view.screen_px.toFixed(0)} px` : (cam.calibrated ? '已有标定' : '');
+  let camInfo = cam.error ? '相机出错：' + cam.error : cam.open ? `标定页的码 ${cam.markers} 个，桌面的码 ${cam.tags} 个` : '';
+  if (cam.drift) camInfo += cam.drift.max_px === null ? '；桌面的码都看不到了' :
+    `；桌面的码相对标定时移动了最多 ${cam.drift.max_px.toFixed(1)} px` + (cam.drift.missing ? `（${cam.drift.missing} 个看不到）` : '') + (cam.drift.max_px > 2 ? ' ← 相机或桌面动过，重新做相机标定' : '');
+  $('cam-info').textContent = camInfo;
+  const tap = s.results.taptest && s.results.taptest.summary;
+  $('tap-summary').textContent = tap ? `点按测试：触发 ${tap.registered}/${tap.n}` + (tap.registered ? `，偏差 平均 ${tap.mean_mm.toFixed(2)} / 中位 ${tap.median_mm.toFixed(2)} / 最大 ${tap.max_mm.toFixed(2)} mm，≤2 mm ${tap.within_2mm}/${tap.registered}` : '') : '';
+  const log = $('log'), atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
+  for (const line of s.log) { const row = document.createElement('div'); row.innerHTML = '<span class="t"></span>'; row.firstChild.textContent = line.t;
+    row.appendChild(document.createTextNode(line.text)); log.appendChild(row); logSince = Math.max(logSince, line.i); }
+  if (s.log.length && atEnd) log.scrollTop = log.scrollHeight;
+  for (const id of ['connect', 'fit', 'view', 'place', 'probe', 'taptest', 'park', 'hover', 'home', 'back', 'tap', 'cam-open', 'cam-close', 'save-set']) $(id).disabled = !!s.busy;
+  document.querySelectorAll('[data-key]').forEach(button => button.disabled = !!s.busy || !arm.connected);
+  $('cam-empty').style.display = cam.has_frame ? 'none' : 'flex'; $('cam-empty').textContent = cam.open ? '等待画面…' : '相机未打开';
+  $('screen-empty').style.display = cam.has_frame && cam.calibrated ? 'none' : 'flex';
+}
+async function poll() {
+  try { render(await (await fetch(withToken('/api/state?log_since=' + logSince))).json()); }
+  catch (error) { chip('c-busy', '控制台服务连不上', 'bad'); }
+  setTimeout(poll, 400);
+}
+function refreshImages() {
+  if (state && state.camera.has_frame) {
+    const stamp = Date.now();
+    $('cam').src = withToken('/api/camera.jpg?w=960&t=' + stamp);
+    if (state.camera.calibrated) $('screen').src = withToken('/api/screen.jpg?w=896&t=' + stamp);
+  }
+  setTimeout(refreshImages, 700);
+}
+poll(); refreshImages();
+</script>
+</body>
+</html>

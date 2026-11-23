@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="color-scheme" content="only light">
+<meta name="mobile-web-app-capable" content="yes">
+<title>平板点击标定</title>
+<style>
+  /* The page is one fixed stage of innerWidth x innerHeight CSS pixels; everything on it is placed by the script in
+     pixels from normalized screen coordinates (u = x / innerWidth, v = y / innerHeight), the same numbers a touch is
+     reported in. Sizes and colours come from the server (screen_view.py), which renders the same picture. */
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #202020;
+    touch-action: none; overscroll-behavior: none;
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+  }
+  #stage { position: fixed; left: 0; top: 0; overflow: hidden; background: #202020; }
+  #stage > *, #markers > * { position: absolute; }
+  #markers, #overlay, #info, #warn { pointer-events: none; }
+  #markers, #overlay { left: 0; top: 0; width: 100%; height: 100%; }
+  /* A canvas, not a background colour: browsers' forced dark mode repaints backgrounds and hides the quiet zone. */
+  :root { color-scheme: only light; }
+  img.marker {
+    display: block;
+    image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges; image-rendering: pixelated;
+  }
+  /* The crosshair and the touch dot are SVG: the browser moves an HTML box to whole pixels (the dot was up to half a
+     CSS pixel from the touch), SVG shapes are drawn where they are, anti-aliased. */
+  #overlay { display: block; shape-rendering: geometricPrecision; }
+  #info { color: #8a8a8a; font: 14px/1.2 monospace; white-space: nowrap; }
+  #warn {
+    left: 12%; width: 76%; top: 31%; box-sizing: border-box; padding: 0.6em 1em; border-radius: 0.4em;
+    background: #d40000; color: #fff; font: bold 22px/1.4 sans-serif; text-align: center;
+  }
+  #fs {
+    left: 50%; top: 52%; transform: translate(-50%, -50%); padding: 0.7em 1.6em; border: 0; border-radius: 0.5em;
+    background: #2f6fed; color: #fff; font: bold 34px/1.2 sans-serif; touch-action: manipulation;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="markers"></div>
+  <svg id="overlay" xmlns="http://www.w3.org/2000/svg">
+    <g id="target" fill="#fff" style="display: none">
+      <rect id="th"></rect><rect id="tv"></rect><circle id="tr" fill="none" stroke="#fff"></circle>
+    </g>
+    <g id="dot" style="display: none"><circle id="dot-ring" fill="#fff"></circle><circle id="dot-disc" fill="#ff00ff"></circle></g>
+  </svg>
+  <div id="info"></div>
+  <div id="warn" style="display: none"></div>
+  <button id="fs" type="button">点这里进入全屏</button>
+</div>
+<script>
+'use strict';
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const stage = $('stage'), markersEl = $('markers'), targetEl = $('target'), dotEl = $('dot');
+  const infoEl = $('info'), warnEl = $('warn'), fsButton = $('fs');
+  const POLL_MS = 250;        // the server's mode / target / clear are obeyed within this
+  const MOVE_MS = 33;         // pointermove is reported at about 30 Hz
+  const COVER_TOLERANCE = 1.5; // CSS px; the same test as calib_server.COVER_TOLERANCE_PX
+
+  // Until the server answers: the same numbers as screen_view.py.
+  let style = { background: '#202020', dot_color: '#ff00ff', dot_diameter: 0.035, dot_ring: 0.004,
+                target_arm: 0.04, target_ring: 0.03, target_line: 0.003, marker_cells: 6 };
+  let layout = null;          // {aspect, markers: {id: [u0, v0, u1, v1]}} from the server
+  let layoutError = '';       // why the server has no layout for this screen (portrait)
+  let mode = 'markers', target = null, clearSeq = null;
+  let dot = null;             // {u, v} of the last pointerdown
+  let pollFails = 0, fsError = '';
+  let markerKey = '';
+
+  function fullscreenElement() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+
+  function screenInfo() {
+    return { inner_w: window.innerWidth, inner_h: window.innerHeight, screen_w: screen.width, screen_h: screen.height,
+             dpr: window.devicePixelRatio || 1, fullscreen: !!fullscreenElement(), user_agent: navigator.userAgent };
+  }
+
+  function coversDisplay() {
+    const w = window.innerWidth, h = window.innerHeight, t = COVER_TOLERANCE;
+    const same = (a, b) => Math.abs(w - a) <= t && Math.abs(h - b) <= t;
+    return same(screen.width, screen.height) || same(screen.height, screen.width);
+  }
+
+  function place(el, x, y, w, h) {
+    el.style.left = x + 'px'; el.style.top = y + 'px'; el.style.width = w + 'px'; el.style.height = h + 'px';
+  }
+  function show(el, on) { el.style.display = on ? '' : 'none'; }
+  function attrs(el, values) { for (const name of Object.keys(values)) el.setAttribute(name, values[name]); }
+
+  function buildMarkers() {
+    const key = layout ? Object.keys(layout.markers).join(',') : '';
+    if (key === markerKey) return;
+    markerKey = key;
+    markersEl.textContent = '';
+    if (!layout) return;
+    for (const id of Object.keys(layout.markers)) {
+      const quiet = document.createElement('canvas');
+      quiet.className = 'quiet'; quiet.dataset.id = id; quiet.width = quiet.height = 8;
+      const paint = quiet.getContext('2d');
+      paint.fillStyle = '#fff'; paint.fillRect(0, 0, 8, 8);
+      const img = document.createElement('img');
+      img.className = 'marker'; img.dataset.id = id; img.alt = ''; img.draggable = false;
+      img.src = '/marker/' + id + '.png';
+      markersEl.appendChild(quiet); markersEl.appendChild(img);
+    }
+  }
+
+  function render() {
+    const w = window.innerWidth, h = window.innerHeight;
+    place(stage, 0, 0, w, h);
+    stage.style.background = style.background;
+
+    buildMarkers();
+    show(markersEl, mode === 'markers' && layout);
+    if (layout) {
+      for (const el of markersEl.children) {
+        const [u0, v0, u1, v1] = layout.markers[el.dataset.id];
+        // The white quiet zone reaches one marker cell beyond the marker on every side.
+        const cu = el.className === 'quiet' ? (u1 - u0) / style.marker_cells : 0;
+        const cv = el.className === 'quiet' ? (v1 - v0) / style.marker_cells : 0;
+        place(el, (u0 - cu) * w, (v0 - cv) * h, (u1 - u0 + 2 * cu) * w, (v1 - v0 + 2 * cv) * h);
+      }
+    }
+
+    attrs($('overlay'), { width: w, height: h, viewBox: '0 0 ' + w + ' ' + h });
+    const showTarget = mode === 'target' && Array.isArray(target) && target.length === 2;
+    show(targetEl, showTarget);
+    if (showTarget) {
+      const x = target[0] * w, y = target[1] * h;
+      const arm = style.target_arm * h, line = Math.max(2, style.target_line * h), ring = style.target_ring * h;
+      attrs($('th'), { x: x - arm, y: y - line / 2, width: 2 * arm, height: line });
+      attrs($('tv'), { x: x - line / 2, y: y - arm, width: line, height: 2 * arm });
+      // the ring is `ring` across on the outside, `line` wide
+      attrs($('tr'), { cx: x, cy: y, r: (ring - line) / 2, 'stroke-width': line });
+    }
+
+    show(dotEl, !!dot);
+    if (dot) {
+      const radius = style.dot_diameter * h / 2;
+      // The thin white ring lies outside the disc, so the disc keeps its diameter.
+      attrs($('dot-ring'), { cx: dot.u * w, cy: dot.v * h, r: radius + Math.max(1, style.dot_ring * h) });
+      attrs($('dot-disc'), { cx: dot.u * w, cy: dot.v * h, r: radius, fill: style.dot_color });
+    }
+
+    // The small text sits on the bottom edge between the bottom-left and bottom-centre markers.
+    let left = 0.24;
+    if (layout) {
+      const rightEdges = Object.values(layout.markers).filter((m) => m[3] > 0.5).map((m) => m[2]).sort((a, b) => a - b);
+      if (rightEdges.length) left = rightEdges[0] * (1 + 2 / style.marker_cells);
+    }
+    infoEl.style.left = left * w + 'px';
+    infoEl.style.bottom = 0.012 * h + 'px';
+    infoEl.style.fontSize = Math.max(10, 0.02 * h) + 'px';
+    infoEl.textContent = dot ? 'u=' + dot.u.toFixed(4) + '  v=' + dot.v.toFixed(4) : '';
+
+    const covers = coversDisplay();
+    show(fsButton, !fullscreenElement() && !covers);
+    let warning = '';
+    if (pollFails >= 4) {
+      warning = '连不上标定服务：请检查电脑上的 calib_server 和网络。';
+    } else if (!covers) {
+      warning = '页面没有铺满整个屏幕（页面 ' + w + '×' + h + '，屏幕 ' + screen.width + '×' + screen.height +
+                '）。请点“点这里进入全屏”，否则标定结果是错的。';
+      if (fsError) warning += ' ' + fsError;
+    } else if (layoutError) {
+      warning = layoutError;
+    }
+    show(warnEl, !!warning);
+    warnEl.textContent = warning;
+    warnEl.style.fontSize = Math.max(14, 0.03 * h) + 'px';
+    fsButton.style.fontSize = Math.max(18, 0.05 * h) + 'px';
+  }
+
+  // ---- talking to the server -------------------------------------------------------------------------------------
+
+  function fetchJson(path, options, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs || 2000);
+    return fetch(path, Object.assign({ cache: 'no-store', signal: controller.signal }, options || {}))
+      .then((response) => response.json())
+      .finally(() => clearTimeout(timer));
+  }
+
+  // Touch reports leave one at a time, in the order they happened: two requests in flight can arrive swapped (seen
+  // with a quick tap: its up before its down). Nothing waits for them, the pointer handler only appends here. A
+  // pointermove still waiting is replaced by the next one, so a slow network delays the reports of a drag instead
+  // of piling them up; downs and ups are never dropped.
+  const queue = [];
+  let sending = false;
+  function sendTouch(touch) {
+    const last = queue[queue.length - 1];
+    if (touch.type === 'pointermove' && last && last.type === 'pointermove' && last.pointer_id === touch.pointer_id) {
+      queue[queue.length - 1] = touch;
+    } else {
+      queue.push(touch);
+    }
+    pump();
+  }
+  function pump() {
+    if (sending || !queue.length) return;
+    const body = JSON.stringify(queue.shift());
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1500);
+    let request;
+    try {
+      request = fetch('/touch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body,
+                                  keepalive: true, cache: 'no-store', signal: controller.signal });
+    } catch (err) {
+      if (navigator.sendBeacon) navigator.sendBeacon('/touch', new Blob([body], { type: 'application/json' }));
+      request = Promise.resolve();
+    }
+    sending = true;
+    request.catch(() => {}).finally(() => { clearTimeout(timer); sending = false; pump(); });
+  }
+
+  let screenPosting = false, screenAgain = false;
+  function postScreen() {
+    if (screenPosting) { screenAgain = true; return; }
+    screenPosting = true;
+    fetchJson('/screen', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                           body: JSON.stringify(screenInfo()) })
+      .then((answer) => {
+        layout = answer.layout || null;
+        layoutError = answer.layout ? '' : (answer.error || '');
+        if (answer.layout && answer.layout.style) style = Object.assign({}, style, answer.layout.style);
+      })
+      .catch(() => {})
+      .finally(() => {
+        screenPosting = false;
+        render();
+        if (screenAgain) { screenAgain = false; postScreen(); }
+      });
+  }
+
+  let resizeTimer = null;
+  function onResize() {
+    render();
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(postScreen, 120);
+  }
+
+  let polling = false;
+  function poll() {
+    if (polling) return;
+    polling = true;
+    fetchJson('/state?page=1')
+      .then((state) => {
+        pollFails = 0;
+        if (clearSeq !== null && state.clear_seq !== clearSeq) dot = null;
+        clearSeq = state.clear_seq;
+        mode = state.mode;
+        target = state.target;
+        // A restarted server has forgotten the screen; so has one that holds another size than the page has now.
+        const known = state.screen;
+        if (!known || known.inner_w !== window.innerWidth || known.inner_h !== window.innerHeight ||
+            known.fullscreen !== !!fullscreenElement()) postScreen();
+      })
+      .catch(() => { pollFails += 1; })
+      .finally(() => { polling = false; render(); });
+  }
+
+  // ---- fullscreen ------------------------------------------------------------------------------------------------
+
+  fsButton.addEventListener('click', () => {
+    const el = document.documentElement;
+    const request = el.requestFullscreen || el.webkitRequestFullscreen;
+    fsError = '';
+    if (!request) { fsError = '这个浏览器不支持全屏，请换用 Chrome。'; render(); return; }
+    try {
+      const result = request.call(el, { navigationUI: 'hide' });
+      if (result && result.then) {
+        result.then(() => {
+          // Keep the tablet from turning the page after the calibration (the way up it has now, if that is a
+          // landscape one); not every browser allows it.
+          try {
+            const now = screen.orientation && screen.orientation.type;
+            const keep = now && now.indexOf('landscape') === 0 ? now : 'landscape';
+            if (screen.orientation && screen.orientation.lock) screen.orientation.lock(keep).catch(() => {});
+          } catch (err) { /* not supported */ }
+        }).catch((err) => { fsError = '进入全屏失败：' + (err && err.message ? err.message : err); render(); });
+      }
+    } catch (err) {
+      fsError = '进入全屏失败：' + (err && err.message ? err.message : err);
+      render();
+    }
+  });
+  for (const type of ['fullscreenchange', 'webkitfullscreenchange']) {
+    document.addEventListener(type, () => { onResize(); setTimeout(postScreen, 1000); });
+  }
+  window.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', onResize);
+
+  // ---- touches ---------------------------------------------------------------------------------------------------
+
+  const onButton = (event) => !!(event.target && event.target.closest && event.target.closest('#fs'));
+  const pressed = new Set();
+  let lastMove = 0, count = 0;
+
+  function onPointer(event) {
+    if (onButton(event)) return;  // the fullscreen button is not a tap on the screen
+    event.preventDefault();
+    const type = event.type;
+    if (type === 'pointerdown') {
+      pressed.add(event.pointerId);
+    } else if (type === 'pointermove') {
+      if (!pressed.has(event.pointerId)) return;  // a mouse or pen hovering
+      const now = performance.now();
+      if (now - lastMove < MOVE_MS) return;
+      lastMove = now;
+    } else {
+      if (!pressed.delete(event.pointerId)) return;
+    }
+    const u = event.clientX / window.innerWidth, v = event.clientY / window.innerHeight;
+    if (type === 'pointerdown') { dot = { u: u, v: v }; render(); }
+    count += 1;
+    sendTouch({ type: type, u: u, v: v, t_ms: Date.now(), pointer_type: event.pointerType || '',
+                pointer_id: event.pointerId, n: count });
+  }
+  for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
+    window.addEventListener(type, onPointer, { passive: false });
+  }
+
+  // No scrolling, zooming, long-press menu, selection or dragging: a tap must only be a tap.
+  for (const type of ['contextmenu', 'gesturestart', 'gesturechange', 'gestureend', 'dblclick', 'selectstart',
+                      'dragstart', 'touchmove']) {
+    document.addEventListener(type, (event) => event.preventDefault(), { passive: false });
+  }
+  for (const type of ['touchstart', 'touchend']) {  // not on the button: its click must still fire
+    document.addEventListener(type, (event) => { if (!onButton(event)) event.preventDefault(); }, { passive: false });
+  }
+  window.addEventListener('wheel', (event) => event.preventDefault(), { passive: false });
+
+  render();
+  postScreen();
+  poll();
+  setInterval(poll, POLL_MS);
+})();
+</script>
+</body>
+</html>

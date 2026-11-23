@@ -1,0 +1,8 @@
+solid valid True, STL watertight True, bodies 1
+size [68.0, 64.1, 69.2] mm, volume 41.2 cm3
+colour lens: 75.0 in front of the post, 32.5 to the robot's left of the post centre, 19.2 below the clamp centre
+overlap mm3: D435 box 0.00, post 0.00, screw heads [0.0, 0.0, 0.0, 0.0]
+screwdriver path (d5 x 120) vs bracket [0.0, 0.0, 0.0, 0.0], vs D435 [426.7, 0.0, 0.0, 0.0], vs post [0.0, 0.0, 0.0, 0.0]
+
+Order: screw the bracket to the post first, then the camera (the D435 blocks the driver path to the lower M4).
+Mounting: clamp centre 255 mm above the base-plate top (colour lens 236 mm).

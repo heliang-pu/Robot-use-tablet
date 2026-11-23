@@ -1,0 +1,5 @@
+**v3 验收结果：50 PASS，0 FAIL。**
+
+Ø10 笔就座后，四个截面测得的全周最小净空均为 **1.321062 mm**，位于左上方 45° 倒角面，超过 0.9 mm 要求。滑座连笔后移 5 mm 后仍无干涉。隧道顶至上指尖定位槽底的壁厚实测为 **2.5000 mm**。[验收报告](/home/phl/workspace/tablet_tap/cad/out/check_report.txt)
+
+四个 STL、Blender 工程和八张渲染图均已重新生成并复查。[v3 输出](/home/phl/workspace/tablet_tap/cad/out/) · [v2 完整归档](/home/phl/workspace/tablet_tap/cad/out_v2/)

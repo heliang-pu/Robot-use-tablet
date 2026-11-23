@@ -1,0 +1,10 @@
+两段视频均已完成，格式为 **1280×720、24 fps、H.264、yuv420p、CRF 18**。
+
+| 视频 | 代表帧 | 时长 | 帧数 | 平均 / 最慢渲染耗时 |
+|---|---|---:|---:|---:|
+| [电容笔夹.mp4](/home/phl/workspace/tablet_tap/cad/out/videos/pen_holder.mp4) | [笔夹海报](/home/phl/workspace/tablet_tap/cad/out/videos/pen_holder_poster.png) | 10.00 秒 | 240 | 1.96 / 2.88 秒每帧 |
+| [平板支架.mp4](/home/phl/workspace/tablet_tap/cad/out/videos/tablet_stand.mp4) | [支架海报](/home/phl/workspace/tablet_tap/cad/out/videos/tablet_stand_poster.png) | 10.00 秒 | 240 | 2.52 / 3.52 秒每帧 |
+
+**内容与任务书一致。** 笔夹在侧视停留的 2 秒内完成两次 4 mm 下压回弹，两片簧片随动弯曲。右托座滑至 90 mm、再到 150 mm，最后回到 118 mm，平板淡入就位。
+
+每段成片各抽查了 5 帧，未见穿模。全部 480 帧均无黑帧，零件全程在画内。原有 v3 文件已通过哈希校验，临时 PNG 序列已清理。[渲染脚本](/home/phl/workspace/tablet_tap/cad/render_videos.py)

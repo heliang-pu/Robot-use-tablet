@@ -1,0 +1,15 @@
+# Line length, formatter and import style as in RoboSynChallenge's policy/fmc3_no1/pyproject.toml. Its long rule list
+# (B, SIM, RUF, FBT, ...) is not switched on here: the first version of this project was written against the default
+# rules, and under the long list about 190 style findings remain to be worked through.
+line-length = 120
+target-version = "py311"
+extend-exclude = ["third_party", "venvs", "cad", ".pydeps", "weights", "runs"]
+
+[lint]
+select = ["E4", "E7", "E9", "F", "I", "W"]
+
+[lint.isort]
+force-single-line = true
+force-sort-within-sections = true
+single-line-exclusions = ["collections.abc", "typing", "typing_extensions"]
+known-first-party = ["tablet_tap"]

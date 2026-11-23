@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>平板点按</title>
+<link rel="icon" href="data:,">
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+:root { --bg:#edf0f3; --panel:#fff; --sunken:#f4f6f8; --ink:#142029; --muted:#5a6875; --line:#d5dce3; --accent:#0c6886; --accent-ink:#fff;
+  --ok:#1b7c46; --bad:#bd392f; --warn:#a4610a; --ok-tint:rgba(27,124,70,.12); --bad-tint:rgba(189,57,47,.11); --warn-tint:rgba(164,97,10,.14);
+  --mono:ui-monospace,Menlo,Consolas,monospace; color-scheme:light; }
+@media (prefers-color-scheme: dark) { :root { --bg:#0b1116; --panel:#121a21; --sunken:#0e151b; --ink:#e1e8ee; --muted:#93a1ad; --line:#24303a;
+  --accent:#45b0d1; --accent-ink:#062129; --ok:#46c07b; --bad:#ec6a5e; --warn:#efa33b; color-scheme:dark; } }
+html, body { height:100%; margin:0; background:var(--bg); color:var(--ink); font:14px/1.4 "PingFang SC","Noto Sans CJK SC",system-ui,sans-serif; }
+button, input, select { font:inherit; color:inherit; }
+.app { min-height:100%; max-width:1400px; margin:0 auto; padding:10px 16px 12px; display:flex; flex-direction:column; gap:10px; }
+.topbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 16px; }
+h1 { font-size:20px; margin:0; }
+.chips { display:flex; flex-wrap:wrap; gap:6px; }
+.chip { padding:2px 10px; border:1px solid var(--line); border-radius:999px; background:var(--panel); font-size:12.5px; color:var(--muted); }
+.chip b { color:var(--ink); font-weight:600; } .chip.ok b { color:var(--ok); } .chip.warn b { color:var(--warn); } .chip.bad b { color:var(--bad); }
+.tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); }
+.tab { padding:6px 18px; border:1px solid transparent; border-bottom:none; border-radius:8px 8px 0 0; background:none; color:var(--muted); cursor:pointer; }
+.tab[aria-selected="true"] { background:var(--panel); border-color:var(--line); color:var(--ink); font-weight:600; }
+.panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+.tally { display:grid; gap:1px; background:var(--line); border:1px solid var(--line); border-radius:10px; overflow:hidden; grid-template-columns:1.6fr repeat(4,1fr); }
+.tile { background:var(--panel); padding:7px 12px; min-width:0; } .tile .k { font-size:12px; color:var(--muted); }
+.tile .v { font-size:24px; font-weight:600; line-height:1.15; font-variant-numeric:tabular-nums; } .tile .s { font-size:12px; color:var(--muted); }
+.main { display:grid; grid-template-columns:minmax(0,1.9fr) minmax(290px,1fr); gap:10px; align-items:start; }
+@media (max-width:900px) { .main { grid-template-columns:1fr; } .tally { grid-template-columns:1fr 1fr; } .tile:first-child { grid-column:1/-1; } }
+.box { position:relative; background:#000; border-radius:8px; overflow:hidden; min-height:120px; }
+.box img { display:block; width:100%; } .box svg { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+.empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#9aa; }
+.click { cursor:crosshair; }
+.side { display:flex; flex-direction:column; gap:10px; }
+.row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.btn { padding:9px 16px; border:1px solid var(--line); border-radius:8px; background:var(--sunken); cursor:pointer; touch-action:manipulation; }
+.btn.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:600; }
+.btn.stop { background:var(--bad); border-color:var(--bad); color:#fff; font-weight:700; font-size:17px; padding:12px 0; width:100%; }
+.btn:disabled { opacity:.4; cursor:default; }
+.pad { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; } .pad .btn { padding:13px 0; }
+.seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; } .seg label { padding:5px 11px; cursor:pointer; }
+.seg input { display:none; } .seg label:has(input:checked) { background:var(--accent); color:var(--accent-ink); }
+.note { font-size:12.5px; color:var(--muted); } .note.bad { color:var(--bad); }
+#log { font:12.5px/1.55 var(--mono); height:60vh; overflow:auto; background:var(--sunken); border:1px solid var(--line); border-radius:8px; padding:8px 10px; white-space:pre-wrap; }
+#log span { color:var(--muted); margin-right:8px; }
+#toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--bad); color:#fff; padding:9px 16px; border-radius:8px; display:none; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar"><h1>平板点按</h1>
+    <div class="chips"><span class="chip" id="c-arm">左臂 <b>—</b></span><span class="chip" id="c-cam">相机 <b>—</b></span>
+      <span class="chip" id="c-tab">平板 <b>—</b></span><span class="chip" id="c-page">标定页 <b>—</b></span></div></header>
+  <nav class="tabs"><button class="tab" data-tab="tap" aria-selected="true">点按</button><button class="tab" data-tab="prompt">指令</button><button class="tab" data-tab="log">日志</button></nav>
+
+  <div data-pane="tap" style="display:flex;flex-direction:column;gap:10px">
+    <section class="tally">
+      <div class="tile"><div class="k">当前</div><div class="v" id="t-state">—</div><div class="s" id="t-sub"></div></div>
+      <div class="tile"><div class="k">上一次偏差</div><div class="v" id="t-last">—</div><div class="s" id="t-last-s"></div></div>
+      <div class="tile"><div class="k">点按平均偏差</div><div class="v" id="t-mean">—</div><div class="s" id="t-mean-s"></div></div>
+      <div class="tile"><div class="k">点按最大偏差</div><div class="v" id="t-max">—</div><div class="s">单位 mm</div></div>
+      <div class="tile"><div class="k">点到 / 次数</div><div class="v" id="t-n">—</div><div class="s" id="t-n-s"></div></div>
+    </section>
+    <section class="panel"><div class="row"><b>指令</b><input id="say" style="flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--sunken)" placeholder="例如：打开音乐，播放音乐">
+      <button class="btn primary" id="go">执行</button><a class="note" id="runlink" href="/run">语音和步骤详情</a></div><div class="note" id="run-info" style="margin-top:6px"></div></section>
+    <div class="main">
+      <section class="panel"><div class="box click" id="sbox"><img id="screen" alt=""><svg id="marks" viewBox="0 0 1 1" preserveAspectRatio="none"></svg><div class="empty" id="s-empty">连接后这里显示平板屏幕，点哪里手臂就点哪里</div></div>
+        <div class="note" style="margin-top:6px">点这张图，手臂就去点同一个位置。蓝圈 = 要点的，红点 = 屏幕实际报告的。</div></section>
+      <div class="side">
+        <section class="panel"><button class="btn stop" id="stop">停止（空格）</button>
+          <div class="row" style="margin-top:10px"><label><input type="checkbox" id="attended"> 有人能断电</label>
+            <button class="btn primary" id="start">连接</button><button class="btn" id="park">让开</button><button class="btn" id="disconnect">断开</button></div>
+          <div class="row" style="margin-top:8px"><label><input type="checkbox" id="after" checked> 点完让开</label>
+            <button class="btn" id="forget">清空修正</button></div>
+          <div class="row" style="margin-top:8px"><b>夹爪</b><span class="seg" id="grip"><button class="btn" id="g-close" style="border:0;border-radius:0">夹紧笔夹</button><button class="btn" id="g-open" style="border:0;border-radius:0">松开</button></span><span class="note" id="g-mm"></span></div>
+          <button class="btn primary" id="cal" style="width:100%;margin-top:10px">一键校准精度（约 3 分钟）</button>
+          <div class="note" id="cal-info" style="margin-top:6px"></div>
+          <div class="note" id="hint" style="margin-top:6px"></div></section>
+        <section class="panel"><div class="row" style="justify-content:space-between;margin-bottom:8px"><b>移动</b>
+            <span class="seg"><label><input type="radio" name="step" value="1">0.2</label><label><input type="radio" name="step" value="2" checked>1</label><label><input type="radio" name="step" value="3">5</label><label><input type="radio" name="step" value="4">20 mm</label></span></div>
+          <div class="pad"><button class="btn" data-key="r">上</button><button class="btn" data-key="w">前</button><button class="btn" data-key="f">下</button>
+            <button class="btn" data-key="a">左</button><button class="btn" data-key="s">后</button><button class="btn" data-key="d">右</button></div>
+          <button class="btn" data-key="z" style="width:100%;margin-top:6px">慢速下探，碰到就停</button></section>
+        <section class="panel"><div class="box click" id="cbox"><img id="cam" alt=""><div class="empty" id="c-empty">相机</div></div></section>
+      </div>
+    </div>
+  </div>
+  <div data-pane="prompt" hidden>
+    <div class="main" style="grid-template-columns:minmax(300px,1fr) minmax(0,1.5fr)">
+      <div class="side">
+        <section class="panel">
+          <b>提示词</b>
+          <textarea id="pr-text" rows="6" style="width:100%;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--sunken);color:inherit;font:inherit;resize:vertical" placeholder="写你要机器人在平板上做的事，例如：&#10;打开音乐，播放第一首歌"></textarea>
+          <div class="row" id="pr-presets" style="margin-top:8px"></div>
+          <details style="margin-top:8px"><summary class="note" style="cursor:pointer">附加说明（跟在提示词后面给模型，一般不用改）</summary>
+            <textarea id="pr-note" rows="4" style="width:100%;margin-top:6px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--sunken);color:inherit;font:inherit;resize:vertical"></textarea>
+            <button class="btn" id="pr-note-reset">恢复默认</button></details>
+          <div class="row" style="margin-top:10px"><button class="btn primary" id="pr-go">执行</button>
+            <button class="btn" id="pr-mic">🎤 说</button>
+            <label class="note"><input type="checkbox" id="pr-auto"> 说完就执行</label>
+            <button class="btn" id="pr-save">存为常用</button>
+            <label class="note">最多步数 <input id="pr-steps" type="number" value="15" min="1" max="40" style="width:60px;padding:4px;border:1px solid var(--line);border-radius:6px;background:var(--sunken)"></label>
+            <button class="btn stop" id="pr-stop" style="width:auto;padding:9px 22px;font-size:15px">停止</button></div>
+          <div class="note" id="pr-ready" style="margin-top:8px"></div></section>
+        <section class="panel"><b>以前的指令</b><div id="pr-history" style="margin-top:6px"></div></section>
+      </div>
+      <section class="panel"><div class="row" style="justify-content:space-between"><b id="pr-title">执行过程</b><span class="note" id="pr-status"></span></div>
+        <div id="pr-steps-box" style="margin-top:8px"></div></section>
+    </div>
+  </div>
+  <div data-pane="log" hidden><section class="panel"><div id="log"></div><div class="note" style="margin-top:6px"><a href="/console/full" id="full">完整控制台</a></div></section></div>
+</div>
+<div id="toast"></div>
+<script>
+const $ = id => document.getElementById(id);
+const token = new URLSearchParams(location.search).get('token') || '';
+const url = u => token ? u + (u.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token) : u;
+let since = 0, state = null, timer = null;
+$('full').href = url('/console/full');
+function toast(text) { $('toast').textContent = text; $('toast').style.display = 'block'; clearTimeout(timer); timer = setTimeout(() => $('toast').style.display = 'none', 4000); }
+async function cmd(body) {
+  try { const r = await fetch(url('/api/cmd'), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    if (!r.ok) toast((await r.json()).error || r.status); } catch (e) { toast('连不上控制台：' + e); }
+}
+const stopNow = () => fetch(url('/api/stop'), {method:'POST'}).catch(() => toast('停止没有发出去！直接断电'));
+$('stop').onclick = stopNow;
+$('start').onclick = () => cmd({cmd:'start', channel:'can_l_follower', attended:$('attended').checked});
+$('disconnect').onclick = () => cmd({cmd:'disconnect'});
+$('park').onclick = () => cmd({cmd:'park'});
+$('forget').onclick = () => cmd({cmd:'forget_contacts'});
+$('g-close').onclick = () => cmd({cmd:'grip', close:true});
+$('g-open').onclick = () => confirm('松开后笔夹会掉，先用手扶住。确定松开？') && cmd({cmd:'grip', close:false});
+$('cal').onclick = () => confirm('手臂会自动点屏幕约 40 下。平板标定页要全屏、放稳，有人能断电。开始？') && cmd({cmd:'calibrate_taps'});
+$('runlink').href = url('/run');
+$('go').onclick = async () => { const r = await fetch(url('/api/run/start'), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({instruction:$('say').value})});
+  if (!r.ok) toast((await r.json()).error || r.status); };
+$('say').onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') $('go').click(); };
+async function runState() { try { const r = await (await fetch(url('/api/run/state'))).json(); const n = r.run && r.run.n_steps, last = n ? r.run.steps[n - 1] : null;
+  $('run-info').textContent = r.run && r.run.status === 'running' ? `第 ${n} 步：${last ? last.did : '在看屏幕'}` : r.missing.length ? '还不能执行：' + r.missing.join('；') : r.run ? `上次：${r.run.instruction} → ${r.run.status} ${r.run.answer || ''}` : '可以执行';
+  $('go').disabled = !!r.busy || r.missing.length > 0; } catch (e) {} setTimeout(runState, 1200); }
+runState();
+const step = () => document.querySelector('input[name=step]:checked').value;
+document.querySelectorAll('[data-key]').forEach(b => b.onclick = () => cmd({cmd:'key', key:b.dataset.key, step:step()}));
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => { document.querySelectorAll('.tab').forEach(x => x.setAttribute('aria-selected', x === t));
+  document.querySelectorAll('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== t.dataset.tab); document.querySelector('[data-pane=tap]').style.display = t.dataset.tab === 'tap' ? 'flex' : 'none'; });
+function point(event, img, on) {
+  const b = img.getBoundingClientRect(), x = (event.clientX - b.left) / b.width, y = (event.clientY - b.top) / b.height;
+  if (x >= 0 && x <= 1 && y >= 0 && y <= 1) cmd({cmd:'point', on, x, y, park:$('after').checked});
+}
+$('sbox').onclick = e => point(e, $('screen'), 'screen');
+$('cbox').onclick = e => point(e, $('cam'), 'camera');
+document.addEventListener('keydown', e => { if (e.target.tagName === 'INPUT' && e.target.type !== 'radio' && e.target.type !== 'checkbox') return; if (e.key === ' ' || e.key === 'Escape') { e.preventDefault(); stopNow(); } });
+function chip(id, text, kind) { $(id).className = 'chip ' + (kind || ''); $(id).querySelector('b').textContent = text; }
+const mm2 = x => x.toFixed(2);
+const mm = x => x === null || x === undefined ? '—' : x.toFixed(1);
+function render(s) {
+  state = s;
+  const live = s.page.page_age_s !== null && s.page.page_age_s < 3;
+  chip('c-arm', !s.arm.connected ? '未连接' : s.fault ? '故障' : s.arm.moves ? '可运动' : '只读', !s.arm.connected ? '' : s.fault ? 'bad' : 'ok');
+  chip('c-cam', !s.camera.open ? '未打开' : s.camera.error ? '出错' : '正常', !s.camera.open ? '' : s.camera.error ? 'bad' : 'ok');
+  chip('c-page', !live ? '未打开' : s.page.screen && s.page.screen.covers_display ? '全屏' : '没全屏', live && s.page.screen && s.page.screen.covers_display ? 'ok' : 'bad');
+  const t = s.tablet, names = {tracked:'已识别', moving:'在移动', lost:'被挡住', none:'未识别'};
+  chip('c-tab', (names[t.state] || '—') + (t.state === 'tracked' || t.state === 'moving' ? ` ${t.seen} 码${t.tags ? ' + ' + t.tags + ' 贴码' : ''}` : ''), t.state === 'tracked' ? 'ok' : t.state === 'none' ? '' : 'warn');
+  $('t-state').textContent = s.stopping ? '正在停止' : s.busy ? s.busy : s.arm.connected ? '空闲' : '未连接';
+  const p = s.place; $('t-sub').textContent = p && p.u !== undefined ? `笔尖在屏幕 (${p.u.toFixed(2)}, ${p.v.toFixed(2)})，高 ${p.height_mm} mm` : '';
+  const a = s.accuracy, l = a.last;
+  $('t-last').textContent = l ? (l.error_mm === null ? '没点到' : mm(l.error_mm)) : '—'; $('t-last-s').textContent = l ? (l.slow ? '慢速下探' : '正常点按') : 'mm';
+  $('t-mean').textContent = mm(a.fast_mean); $('t-max').textContent = mm(a.fast_max); $('t-mean-s').textContent = a.fast_n ? `${a.fast_n} 次正常点按` : 'mm';
+  $('t-n').textContent = a.n ? `${a.registered} / ${a.n}` : '—'; $('t-n-s').textContent = `触点修正 ${a.contacts} 个`;
+  $('hint').textContent = s.fault ? '故障：' + s.fault : t.reach ? t.reach : a.affine ? '已校准：直接点按' : s.setup.screen_map ? '还在校准：慢速下探，碰到就停。点四角和中间共 4 个以上，之后自动变成正常点按' : '等相机认出平板';
+  $('hint').className = 'note' + (s.fault || t.reach ? ' bad' : '');
+  let g = ''; if (l) { const e = (x, y, c, f) => `<ellipse cx="${x}" cy="${y}" rx=".012" ry=".0192" fill="${f ? c : 'none'}" stroke="${c}" stroke-width=".004"/>`;
+    g = e(l.u, l.v, '#2f7fe8', false); if (l.tu !== null) g += `<ellipse cx="${l.tu}" cy="${l.tv}" rx=".005" ry=".008" fill="#e83030"/>`; }
+  $('marks').innerHTML = g;
+  $('g-mm').textContent = s.gripper_mm == null ? '' : `开口 ${s.gripper_mm} mm`;
+  const c = s.results && s.results.calibration;
+  $('cal-info').textContent = s.progress ? `${s.progress.job} ${s.progress.i}/${s.progress.n}` : c ? `检验 ${c.n} 点：平均 ${mm2(c.mean_mm)}，95% ${mm2(c.p95_mm)}，最大 ${mm2(c.max_mm)} mm；≤1 mm ${c.within_1mm}/${c.n}（校准前 ${mm2(c.before_mean_mm)}）` : a.correction || '';
+  for (const id of ['g-close','g-open','cal']) $(id).disabled = !!s.busy || !s.arm.moves;
+  for (const id of ['start','park','forget','disconnect']) $(id).disabled = !!s.busy;
+  document.querySelectorAll('[data-key]').forEach(b => b.disabled = !!s.busy || !s.arm.moves);
+  const box = $('log'), end = box.scrollTop + box.clientHeight >= box.scrollHeight - 8;
+  for (const line of s.log) { const d = document.createElement('div'), m = document.createElement('span'); m.textContent = line.t; d.append(m, line.text); box.append(d); since = Math.max(since, line.i);
+    if (line.text.startsWith('✗')) toast(line.text); }
+  if (end) box.scrollTop = box.scrollHeight;
+  $('c-empty').style.display = s.camera.has_frame ? 'none' : 'flex'; $('s-empty').style.display = s.camera.has_frame && s.camera.calibrated ? 'none' : 'flex';
+}
+async function poll() { try { render(await (await fetch(url('/api/state?log_since=' + since))).json()); } catch (e) { $('t-state').textContent = '控制台断开'; } setTimeout(poll, 350); }
+function pictures() { if (state && state.camera.has_frame) { const t = Date.now(); $('cam').src = url('/api/camera.jpg?w=960&t=' + t); if (state.camera.calibrated) $('screen').src = url('/api/screen.jpg?w=1280&t=' + t); } setTimeout(pictures, 500); }
+poll(); pictures();
+
+// ---- 指令 ----
+(() => {
+  const send = async (path, data) => { const r = await fetch(url(path), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)}); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); return j; };
+  const load = async path => { const r = await fetch(url(path)); if (!r.ok) throw new Error((await r.json()).error || r.status); return r.json(); };
+  const names = {running:'正在执行', success:'完成', answer:'完成（有回答）', failure:'没有完成', need_user:'需要人处理', unsupported:'需要打字，还不会', max_steps:'步数用完', parse_error:'模型输出看不懂', llm_error:'模型服务出错', stopped:'已停止', error:'出错', exception:'出错'};
+  let shown = '', drawn = 0, note = null, presets = [], viewing = false, wasRunning = false;
+  const button = (text, act) => { const b = document.createElement('button'); b.className = 'btn'; b.style.cssText = 'padding:4px 10px;font-size:13px'; b.textContent = text; b.onclick = act; return b; };
+  function showPresets() { const box = $('pr-presets'); box.textContent = ''; for (const p of presets) { const g = document.createElement('span'); const x = button('×', async () => { try { presets = (await send('/api/run/presets', {presets: presets.filter(q => q !== p)})).presets; showPresets(); } catch (e) { toast(e.message); } });
+    x.title = '删除'; x.style.padding = '4px 6px'; g.append(button(p.length > 24 ? p.slice(0, 24) + '…' : p, () => { $('pr-text').value = p; }), x); box.append(g); } }
+  function drawStep(id, s) { const row = document.createElement('div'); row.style.cssText = 'display:grid;grid-template-columns:minmax(160px,38%) 1fr;gap:12px;padding:10px 0;border-top:1px solid var(--line)';
+    const img = document.createElement('img'); img.style.cssText = 'width:100%;border-radius:6px;cursor:zoom-in'; img.alt = ''; img.src = url(`/api/run/${id}/step_${s.step}.jpg?anno=${s.annotated ? 1 : 0}`); img.onclick = () => window.open(img.src);
+    const text = document.createElement('div'), head = document.createElement('b'), did = document.createElement('div'), why = document.createElement('div'), time = document.createElement('div');
+    head.textContent = `第 ${s.step} 步`; did.textContent = s.did; why.textContent = s.thought; why.className = time.className = 'note'; time.textContent = `模型 ${s.llm_s.toFixed(1)} 秒，手臂 ${s.device_s.toFixed(1)} 秒`; text.append(head, did, why, time); row.append(img, text); return row; }
+  function showRun(run, fresh) { if (fresh || run.id !== shown) { shown = run.id; drawn = 0; $('pr-steps-box').textContent = ''; }
+    $('pr-title').textContent = run.instruction; $('pr-status').textContent = (names[run.status] || run.status) + (run.answer ? '：' + run.answer : '') + (run.elapsed_s ? `，${run.elapsed_s} 秒` : '');
+    for (const s of run.steps) if (s.step > drawn) { $('pr-steps-box').append(drawStep(run.id, s)); drawn = s.step; } }
+  async function history() { try { const box = $('pr-history'); const list = (await load('/api/run/history')).runs; box.textContent = list.length ? '' : '还没有';
+    for (const r of list) { const d = document.createElement('div'); d.style.cssText = 'padding:5px 0;border-top:1px solid var(--line);cursor:pointer'; const st = document.createElement('div'); st.className = 'note'; st.textContent = `${r.started || ''} ${names[r.status] || r.status}，${r.steps} 步`; d.append(r.instruction, st);
+      d.onclick = async () => { try { viewing = true; showRun(await load('/api/run/' + r.id), true); } catch (e) { toast(e.message); } }; box.append(d); } } catch (e) { /* not yet */ } }
+  async function go() { try { viewing = false; const body = {instruction: $('pr-text').value, max_steps: Number($('pr-steps').value)}; if ($('pr-note').value !== note) body.add_info = $('pr-note').value;
+    showRun({...(await send('/api/run/start', body))}, true); } catch (e) { toast(e.message); } }
+  $('pr-go').onclick = go; $('pr-stop').onclick = stopNow; $('pr-note-reset').onclick = () => { $('pr-note').value = note || ''; };
+  $('pr-save').onclick = async () => { const t = $('pr-text').value.trim(); if (!t) return; try { presets = (await send('/api/run/presets', {presets: [...presets, t]})).presets; showPresets(); } catch (e) { toast(e.message); } };
+  for (const id of ['pr-text', 'pr-note', 'pr-steps']) $(id).onkeydown = e => { e.stopPropagation(); if (e.key === 'Escape') stopNow(); if (id === 'pr-text' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) go(); };
+  async function tick() { try { const q = !viewing && shown ? `?id=${shown}&since=${drawn}` : ''; const r = await load('/api/run/state' + q);
+      if (note === null) { note = r.add_info; $('pr-note').value = note; }
+      $('pr-ready').textContent = r.missing.length ? '还不能执行：' + r.missing.join('；') : r.busy ? '正在' + r.busy : '可以执行（Ctrl + 回车也行）'; $('pr-ready').className = 'note' + (r.missing.length ? ' bad' : '');
+      $('pr-go').disabled = !!r.busy || r.missing.length > 0;
+      if (r.run && !viewing) showRun(r.run, false);
+      const running = !!(r.run && r.run.status === 'running'); if (wasRunning && !running) history(); wasRunning = running; } catch (e) { $('pr-ready').textContent = '控制台断开'; } setTimeout(tick, 800); }
+  // speaking: the browser's microphone -> 16 kHz WAV -> the speech service -> the prompt
+  let rec = null;
+  function wav(chunks, from, to) { const n = chunks.reduce((sum, c) => sum + c.length, 0); if (n < from * 0.2) return null;
+    const all = new Float32Array(n); let at = 0; for (const c of chunks) { all.set(c, at); at += c.length; }
+    const ratio = from / to, out = new Int16Array(Math.floor(n / ratio));
+    for (let i = 0; i < out.length; i++) { const a = Math.floor(i * ratio), b = Math.max(a + 1, Math.floor((i + 1) * ratio)); let sum = 0;
+      for (let j = a; j < b && j < n; j++) sum += all[j]; out[i] = Math.max(-1, Math.min(1, sum / (b - a))) * 32767; }
+    const buf = new ArrayBuffer(44 + out.length * 2), v = new DataView(buf), w = (o, t) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+    w(0, 'RIFF'); v.setUint32(4, 36 + out.length * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, to, true); v.setUint32(28, to * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, out.length * 2, true);
+    for (let i = 0; i < out.length; i++) v.setInt16(44 + i * 2, out[i], true); return new Blob([buf], {type: 'audio/wav'}); }
+  async function said() { const {stream, ctx, node, chunks} = rec; rec = null; $('pr-mic').textContent = '🎤 说';
+    node.disconnect(); stream.getTracks().forEach(t => t.stop()); const rate = ctx.sampleRate; ctx.close();
+    const sound = wav(chunks, rate, 16000); if (!sound) { toast('没有录到声音'); return; }
+    try { const r = await fetch(url('/api/run/transcribe'), {method: 'POST', headers: {'Content-Type': 'audio/wav'}, body: sound}); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
+      const text = j.text.replace(/[。！？.!?]+$/, ''); if (!text.trim()) { toast('没有听清'); return; }
+      $('pr-text').value = text; if ($('pr-auto').checked) go(); } catch (e) { toast('语音识别：' + e.message); } }
+  $('pr-mic').onclick = async () => { if (rec) { said(); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { const port = state && state.https_port;
+      toast(port ? `浏览器只在 https 下让用麦克风：改用 https://${location.hostname}:${port}/console（提示证书不受信任时点“高级 → 继续”）` : '浏览器只在 https 下让用麦克风：控制台要带 --https_port 启动（scripts/console.sh 默认带）'); return; }
+    try { const stream = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1, echoCancellation: true, noiseSuppression: true}});
+      const ctx = new AudioContext(), source = ctx.createMediaStreamSource(stream), node = ctx.createScriptProcessor(4096, 1, 1), chunks = [];
+      node.onaudioprocess = e => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0))); source.connect(node); node.connect(ctx.destination);
+      rec = {stream, ctx, node, chunks}; $('pr-mic').textContent = '■ 说完了'; } catch (e) { toast('打不开麦克风：' + e.message); } };
+  load('/api/run/presets').then(r => { presets = r.presets; showPresets(); }).catch(() => {});
+  history(); tick();
+})();
+</script>
+</body>
+</html>

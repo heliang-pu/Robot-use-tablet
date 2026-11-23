@@ -1,0 +1,10 @@
+weights
+venvs/
+.pydeps/
+runs/
+calib/
+__pycache__/
+*.pyc
+cad/out/codex_run.log
+cad/**/*.log
+cad/*.log

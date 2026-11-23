@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Python of tablet_tap's robot side: the project's own environment venvs/robot (pyAgxArm, pyrealsense2, OpenCV with
+# aruco, openai; built by scripts/setup_robot_env.sh). Usage: bin/py -m tablet_tap <子命令> ...  /  bin/py -m pytest -q tests
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ ! -x "$here/venvs/robot/bin/python" ]; then
+  echo "还没有 venvs/robot：先运行 bash scripts/setup_robot_env.sh" >&2
+  exit 1
+fi
+unset ALL_PROXY all_proxy  # socks:// is not understood by httpx / openai
+export NO_PROXY="${NO_PROXY:+$NO_PROXY,}localhost,127.0.0.1" no_proxy="${no_proxy:+$no_proxy,}localhost,127.0.0.1"
+export PYTHONPATH="$here${PYTHONPATH:+:$PYTHONPATH}"
+exec "$here/venvs/robot/bin/python" "$@"
