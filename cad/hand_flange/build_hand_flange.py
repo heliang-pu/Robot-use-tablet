@@ -842,7 +842,7 @@ def render(part, fit, extra, out):
     note = shot(fig.add_subplot(gs[0, 1]), meshes(quarter) + shells, (0.62, 0.72, 0.36), (0, 0, 15), 42, "切掉四分之一（X>0、Y>0）",
                 keep=lambda p: ~((p[:, 0] > 1e-6) & (p[:, 1] > 1e-6)) & (p[:, 2] < H + 30) & (p[:, 2] > -20))  # the cut faces themselves stay
     note("线束 Φ7", (0, 14, WIN_FLOOR + 3.6), (0.9, 0.62))
-    note("线腔\nΦ26 × 16.5", (0, -rb, 12), (0.12, 0.55))
+    note(f"线腔\nΦ26 × {H - TUBE_LEN - SPIG_BOT:g}", (0, -rb, 12), (0.12, 0.55))
     note("手的止口", (0, -TUBE_D / 2, H - 5), (0.1, 0.36))
     note("拉紧螺钉 A", (24, 0, zh), (0.14, 0.2))
     note("止口 Φ40 在环里", (rs * 0.7, 0, 7), (0.14, 0.72))
@@ -857,7 +857,7 @@ def render(part, fit, extra, out):
     note("肩面法兰 Φ57", (-20, 18, FLANGE_TOP), (0.12, 0.72))
     note("凹坑 = A 侧", (TAB_X - 2.6, 3.2, H - SEAT_REL), (0.9, 0.34))
     note = shot(fig.add_subplot(gs[2, 2]), alone, (0.45, 0.6, -0.66), (0, 0, 17), 40, "零件：从臂一侧看")
-    note("止口 Φ39.98 × 6\n四段圆柱面 + 四个平面", (*pol(rs, 315), 6), (0.2, 0.86))
+    note(f"止口 Φ{fit['spigot']:.2f} × {RING_H - SPIG_BOT:g}\n四段圆柱面 + 四个平面", (*pol(rs, 315), 6), (0.2, 0.86))
     note("M3 螺纹 ×4（接环的螺钉）", (*pol(rs, 45), zr), (0.8, 0.9))
     note("肩面（倾角基准）", (0, -24, RING_H), (0.2, 0.2))
     note("线腔，底下敞开", (0, 0, SPIG_BOT), (0.84, 0.7))
@@ -959,7 +959,7 @@ def render(part, fit, extra, out):
     ax.text(31.3, zr + 0.25, "螺纹轴线", fontsize=9, ha="right"), ax.text(31.3, RING_HOLE_Z - 0.65, "环的孔轴线", fontsize=9, ha="right", color="r")
     dim(ax, (30.3, RING_HOLE_Z), (30.3, RING_H), "3.50", at=(30.3, RING_H + 0.8), color="r")
     dim(ax, (rb, 11.6), (tip, 11.6), "", color="g")
-    ax.text(15.4, 12.3, f"钉尖离线腔 {tip - rb:.2f}", fontsize=9, color="g", ha="center")
+    ax.text(15.4, 12.4, f"钉尖离线腔 {tip - rb:.2f}", fontsize=9, color="g", ha="center", bbox=dict(fc="white", ec="none", pad=0.8, alpha=0.9))
     dim(ax, (tip, 14.2), (rs, 14.2), f"旋入 {rs - tip:.2f}", at=((tip + rs) / 2, 14.9))
     lead(ax, "肩面（倾角基准）", (25, RING_H), (26.5, 14.5))
     lead(ax, "向下压", (27.55, zr + 2.25), (24.2, 12.4), color="r")
@@ -1079,11 +1079,11 @@ TODO = """加工前必须在实物上量的（括号里是现在用的值，都�
   11 买到的 M3x{rad_l:g} 实长（{rad_l:g}±{rad_tol:g}）：拧紧后从止口里面看，钉尖不应伸出内壁超过 0.5。
 
 加工要求（给加工方）
-  先车：止口 Φ{spig:.2f}、肩面、Φ{neck:g} 颈、Φ{bore:.2f} 通孔；再铣：台面外形和两块凸台、止口四个平面、出线口和槽；最后钻各径向孔。没有倒扣。
+  先车：止口 Φ{spig:.2f}、肩面、Φ{neck:g} 颈、Φ{bore:.2f} 通孔；再铣：台面外形和两块凸台、止口四个平面、出线口和槽；最后钻各径向孔。颈是车出来的外槽，零件内部没有倒扣。
   肩面与两块凸台面平行 0.02，两块凸台共面 0.01；止口、Φ26 孔对肩面垂直 0.02。止口根部圆角 ≤ R0.3（环的孔口倒角 0.5）。
   4 个接环的 M3 螺纹攻通，轴线离肩面 {thread_drop:.2f} ±0.03。顶丝孔从外向里：Φ3.4 钻到半径 {jack_r:g}，再攻 M3 到孔壁。出线口上角 R2。
   阳极氧化的话，止口和 Φ26 孔按氧化后的尺寸控制；肩面、凸台面不喷漆。
-  打印件（hand_flange_print.*）：Φ26 孔做 Φ{pbore:.2f}，止口做 Φ{pspig:.2f}，接环的螺纹改成 Φ3.4 过孔加方螺母槽；肩面朝下打印，台面下加支撑；
+  打印件（hand_flange_print.*）：Φ26 孔做 Φ{pbore:.2f}，止口做 Φ{pspig:.2f}，接环的螺纹改成 Φ3.4 过孔加方螺母槽；台面朝下打印，法兰下面和凸台周围加支撑；
   只用于试装和走线检查，手的拉紧螺钉每颗 1 片碟簧，不能用来验证精度。
 """
 
