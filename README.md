@@ -2,7 +2,7 @@
 
 **演示**：打开音乐，播放音乐，切换下一首，暂停，退出（2026-11-24 真机录制，三路相机合成，点画面看高清原视频）
 
-<a href="docs/demo/tablet_demo_douyin.mp4"><img src="docs/demo/tablet_demo.webp" width="400" alt="机械臂用电容笔操作平板的演示"></a>
+<a href="docs/demo/tablet_demo_douyin.mp4"><img src="docs/demo/tablet_demo_v2.webp" width="400" alt="机械臂用电容笔操作平板的演示"></a>
 
 人说一句话（例如"打开音乐播放音乐"），松灵 PiPER 机械臂夹着电容笔在安卓平板上一步步点出来。
 
