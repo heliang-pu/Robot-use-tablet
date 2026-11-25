@@ -55,16 +55,36 @@ def test_planning_limits_follow_the_joint_offsets():
     from tablet_tap.config import Setup
     from tablet_tap.core.kinematics import JOINT_LIMITS_RAD
 
-    top = np.radians(70.0)
+    low, top = np.radians(-70.0), np.radians(72.0)
     setup = Setup()
-    assert np.allclose(setup.pen_arm().limits, JOINT_LIMITS_RAD)
-    setup.arm.joint5_limit_deg = 70.0  # the firmware's limit, on the arm's readings
-    assert np.allclose(setup.pen_arm().limits[4], [-top, top])
+    assert np.allclose(setup.pen_arm().limits, JOINT_LIMITS_RAD)  # no arm is chosen: the URDF's limits
+    read = [[-150.0, 150.0], [0.0, 180.0], [-170.0, 0.0], [-100.0, 100.0], [-70.0, 72.0], [-180.0, 180.0]]
+    setup.arm.firmware_limits_deg["can_r_follower"] = read  # what `limits` read from that arm, on its readings
+    setup.arm.channel = "can_l_follower"
+    assert np.allclose(setup.pen_arm().limits, JOINT_LIMITS_RAD)  # an arm that was never read: the URDF's limits
+    setup.arm.channel = "can_r_follower"
+    assert np.allclose(setup.pen_arm().limits, np.radians(read)) and np.allclose(setup.pen_arm().limits[4], [low, top])
+    assert not np.allclose(setup.pen_arm().limits, JOINT_LIMITS_RAD)
     setup.arm.joint_offsets = [0.0, 0.0, 0.0, 0.0, 0.044, 0.0]
-    assert np.allclose(setup.pen_arm().limits[4], [-top - 0.044, top - 0.044])
+    assert np.allclose(setup.pen_arm().limits[4], [low - 0.044, top - 0.044])
     setup.arm.joint_signs[4] = -1.0
-    assert np.allclose(setup.pen_arm().limits[4], [-top + 0.044, top + 0.044])
-    assert Setup.from_json(setup.to_json()).arm.joint5_limit_deg == 70.0
+    assert np.allclose(setup.pen_arm().limits[4], [-top + 0.044, -low + 0.044])
+    assert Setup.from_json(setup.to_json()).arm.firmware_limits_deg == {"can_r_follower": read}
+    setup.arm.firmware_limits_deg["can_r_follower"] = read[:5]
+    with pytest.raises(SetupError, match="limits"):
+        setup.pen_arm()
+
+
+def test_a_file_with_the_one_number_for_joint_5():
+    from tablet_tap.config import Setup
+
+    old = {"arm": {"channel": "can_l_follower", "joint5_limit_deg": 70.0}}  # as `limits --restore` wrote it then
+    rows = [[-150.0, 150.0], [0.0, 180.0], [-170.0, 0.0], [-100.0, 100.0], [-70.0, 70.0], [-180.0, 180.0]]
+    assert Setup.from_json(old).arm.firmware_limits_deg == {"can_l_follower": rows}
+    assert "joint5_limit_deg" not in Setup.from_json(old).to_json()["arm"]
+    read = {"arm": {**old["arm"], "firmware_limits_deg": {"can_l_follower": [[-1.0, 1.0]] * 6}}}
+    assert Setup.from_json(read).arm.firmware_limits_deg == {"can_l_follower": [[-1.0, 1.0]] * 6}  # the rows win
+    assert Setup.from_json({"arm": {"joint5_limit_deg": 70.0}}).arm.firmware_limits_deg == {}  # no arm to give it to
 
 
 def test_a_save_without_a_dated_copy(tmp_path):

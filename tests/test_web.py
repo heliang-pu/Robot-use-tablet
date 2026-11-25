@@ -2,6 +2,7 @@
 
 import json
 import time
+import types
 
 import numpy as np
 import pytest
@@ -53,7 +54,9 @@ def hover_over(con, u, v, height=0.012):
 
 def test_pages_and_refusals(bench):
     con, client, _ = bench
-    assert client.get("/console").status_code == 200 and "标定控制台" in client.get("/console/full").get_data(as_text=True)
+    assert client.get("/console").status_code == 200 and "标定控制台" in client.get("/console/full").get_data(
+        as_text=True
+    )
     assert client.get("/calib").status_code == 200  # the tablet's page is served by the same app
     state = client.get("/api/state").get_json()
     assert state["fake"] and not state["arm"]["connected"] and state["busy"] is None
@@ -404,13 +407,20 @@ def test_the_console_follows_a_tablet_put_on_a_slanted_stand_and_then_its_tags(b
     con.calib.set_screen({"inner_w": 1600, "inner_h": 1000, "screen_w": 1600, "screen_h": 1000, "fullscreen": True})
     layout, frame = default_layout(1.6), np.zeros((1080, 1920, 3), np.uint8)
     con.setup.camera_model, con.setup.camera_pose, con.setup.screen_size_m = MODEL, CAMERA.tolist(), [0.24, 0.15]
-    quads = {40: ((-0.2, 0.3), (-0.08, 0.3), (-0.08, 0.5), (-0.2, 0.5)), 41: ((1.08, 0.3), (1.2, 0.3), (1.2, 0.5), (1.08, 0.5))}
+    quads = {
+        40: ((-0.2, 0.3), (-0.08, 0.3), (-0.08, 0.5), (-0.2, 0.5)),
+        41: ((1.08, 0.3), (1.2, 0.3), (1.2, 0.5), (1.08, 0.5)),
+    }
 
     def seen(centre, slant, page=True):
         a = np.radians(slant)
         right, down = np.array([0.0, -1.0, 0.0]), -np.array([np.cos(a), 0.0, np.sin(a)])
         screen = ScreenMap(np.array(centre) - 0.12 * right - 0.075 * down, 0.24 * right, 0.15 * down, -down)
-        boxes = {k: ((u0, v0), (u1, v0), (u1, v1), (u0, v1)) for k, (u0, v0, u1, v1) in layout.markers.items()} if page else {}
+        boxes = (
+            {k: ((u0, v0), (u1, v0), (u1, v1), (u0, v1)) for k, (u0, v0, u1, v1) in layout.markers.items()}
+            if page
+            else {}
+        )
         inverse = np.linalg.inv(CAMERA)
         return screen, {k: MODEL.project(np.array([screen.point(u, v) for u, v in q]) @ inverse[:3, :3].T + inverse[:3, 3])
                         for k, q in (boxes | quads).items()}  # fmt: skip
@@ -463,3 +473,284 @@ def test_https_certificate_is_made_once(tmp_path):
     assert pair is not None and all(p.exists() for p in pair) and (pair[1].stat().st_mode & 0o077) == 0
     stamp = pair[0].stat().st_mtime_ns
     assert web.ensure_certificate(tmp_path, ["192.168.1.138"]) == pair and pair[0].stat().st_mtime_ns == stamp
+
+
+def test_the_park_pose_is_turned_aside_from_the_page(bench):
+    """Joint 1 of the park pose is turned and the arm goes there; only from the park pose, and not past the limits."""
+    con, client, _ = bench
+    taught(con, client)
+    cmd(con, client, cmd="park")
+    before = np.array(con.setup.park_q)
+    cmd(con, client, cmd="park_turn", j1_deg=40)
+    after = np.array(con.setup.park_q)
+    assert abs(after[0] - np.radians(40)) < 1e-9 and np.allclose(after[1:], before[1:])
+    assert np.allclose(con.arm.read(), after, atol=1e-6) and "新的停靠位姿已记下" in log_text(client)
+    assert config.SetupStore(con.store.path).load().park_q == after.tolist()
+    hover_over(con, 0.5, 0.5)  # somewhere else than the park pose
+    cmd(con, client, cmd="park_turn", j1_deg=10)
+    assert "手臂不在停靠位姿" in log_text(client) and con.setup.park_q == after.tolist()
+    assert client.post("/api/cmd", json={"cmd": "park_turn", "j1_deg": 120}).status_code == 400
+
+
+def test_a_lamp_mirrored_in_the_glass_is_measured_on_the_calibration_page():
+    """The calibration page is black but for its markers: what shines beside them is a reflection. The markers
+    themselves, a little misfit of the picture and the touch dot do not count."""
+    import cv2
+
+    from tablet_tap.vision.layout import default_layout
+    from tablet_tap.vision.layout import render_layout
+    from tablet_tap.web.wrist_page import GLARE_SHARE
+    from tablet_tap.web.wrist_page import glare_share
+
+    layout = default_layout(1.6)
+    page = render_layout(layout, 1280, dot=(0.33, 0.9))
+    assert glare_share(page, layout) < 0.001
+    shifted = np.roll(page, 3, axis=1)  # the picture laid over the screen three pixels off
+    assert glare_share(shifted, layout) < 0.001
+    streak = page.copy()
+    cv2.line(streak, (620, 0), (700, 799), (255, 255, 255), 40)  # a tube lamp across the middle
+    assert glare_share(streak, layout) > 3 * GLARE_SHARE
+
+
+def test_two_looks_mend_each_other_where_a_lamp_is_mirrored():
+    """A reflection lies elsewhere on the glass for a camera elsewhere: the first look's picture takes from the second
+    what its own reflection washed out, and stays as it is everywhere else."""
+    import cv2
+
+    from tablet_tap.vision.layout import default_layout
+    from tablet_tap.vision.layout import render_layout
+    from tablet_tap.web.wrist_page import GLARE_SHARE
+    from tablet_tap.web.wrist_page import glare_share
+    from tablet_tap.web.wrist_page import merge_looks
+
+    layout = default_layout(1.6)
+    page = render_layout(layout, 1280)
+    first, second = page.copy(), page.copy()
+    cv2.line(first, (600, 0), (680, 799), (255, 255, 255), 40)
+    cv2.line(second, (300, 0), (340, 799), (255, 255, 255), 40)
+    assert glare_share(first, layout) > GLARE_SHARE and glare_share(second, layout) > GLARE_SHARE
+    merged = merge_looks(first, second)
+    assert glare_share(merged, layout) < 0.001
+    assert np.abs(merged.astype(int) - page.astype(int)).mean() < 1.0
+    untouched = np.ones(page.shape[:2], bool)
+    untouched[:, 520:760] = False  # away from the first look's reflection nothing is taken from the second
+    assert np.array_equal(merged[untouched], first[untouched])
+    assert glare_share(merge_looks(first, first), layout) > GLARE_SHARE  # the same reflection twice mends nothing
+
+
+def test_the_console_survives_an_arm_that_loses_its_power(bench):
+    """On the bench on 2026-11-23 the arm dropped off its bus during a click: tidying up after the job read the arm
+    again, that raised, the worker thread ended and the page said "busy" for ever. It has to say so and go on."""
+    con, client, _ = bench
+    taught(con, client)
+    arm = con.arm._arm
+    read, off = arm.read, {"on": True}
+
+    def failing():
+        if off["on"]:
+            raise RuntimeError("the arm is off the CAN bus")
+        return read()
+
+    arm.read = failing
+    cmd(con, client, cmd="park")  # waits until the console is idle again
+    assert con.busy is None and "手臂读不到了" in log_text(client)
+    off["on"] = False
+    cmd(con, client, cmd="disconnect")
+    cmd(con, client, cmd="connect", channel="can_l_follower", mode="command", attended=True)
+    assert con.arm is not None and con.busy is None  # the same worker carried out both
+
+
+class FaultyArm:
+    """RoboSynChallenge's arm in a teaching mode until its controller is reset, with its gripper wide open."""
+
+    def __init__(self, mode=2, enabled=True, comes_back=True, gentle=False, teach=2):
+        self.mode, self.enabled, self.comes_back, self.sent = mode, enabled, comes_back, []
+        self.gentle, self.teach = gentle, teach
+        self._config, self._robot = types.SimpleNamespace(channel="can_l_follower"), self
+
+    def status(self):
+        return types.SimpleNamespace(msg=types.SimpleNamespace(arm_status=0, ctrl_mode=self.mode, teach_status=self.teach))
+
+    get_arm_status = status
+
+    def get_joints_enable_status_list(self):
+        return [self.enabled] * 6
+
+    def get_driver_states(self, joint):  # noqa: ARG002
+        return None
+
+    def get_joint_angles(self):
+        return types.SimpleNamespace(msg=[0.1] * 6)
+
+    def clear_joint_error(self, joint):  # noqa: ARG002
+        self.sent.append("clear")
+
+    def reset(self):
+        self.sent.append("reset")
+        if self.comes_back:
+            self.mode = 1
+
+    def move_j(self, q):
+        assert q == [0.1] * 6  # the pose it has: enabling must not move it
+        self.sent.append("hold")
+        if self.gentle:
+            self.mode = 1
+
+    def enable(self):
+        self.sent.append("enable")
+        self.enabled = True
+
+    def set_speed_percent(self, percent):
+        self.sent.append(("speed", percent))
+
+    def _enable_gripper(self):
+        self.sent.append("gripper")
+
+    def read(self):
+        return np.full(6, 0.1), 0.0996
+
+    def check_status(self):
+        if self.mode == 2:
+            raise RuntimeError("is in teaching mode (ctrl_mode 2)")
+
+
+def pen_arm(hardware_arm):
+    from tablet_tap.robot import piper
+
+    arm = piper.PiperPenArm.__new__(piper.PiperPenArm)
+    arm._arm, arm._send, arm._speed_percent, arm._last, arm._grip_width_m = hardware_arm, True, 30, np.zeros(6), 0.0
+    return arm
+
+
+@pytest.fixture
+def quick(monkeypatch):
+    import reset_arms
+
+    clock = {"t": 0.0}  # the recovery waits for feedback frames and gives up after 15 s
+    monkeypatch.setattr(reset_arms, "time", types.SimpleNamespace(
+        sleep=lambda s: clock.update(t=clock["t"] + s), monotonic=lambda: clock["t"]))  # fmt: skip
+
+
+def test_an_arm_in_teaching_mode_is_recovered_where_it_is(quick):
+    hardware_arm = FaultyArm()
+    arm = pen_arm(hardware_arm)
+    assert arm.recover() == "示教模式"
+    # the mode is asked for without a reset first; this arm stays in it, so its controller is reset
+    assert hardware_arm.sent == ["hold", "clear", "reset", "hold", "enable", "gripper", ("speed", 30)]
+    assert arm._last is None  # it was moved by hand: the next target starts from where it is
+    assert arm._grip_width_m == pytest.approx(0.0996)  # an open gripper does not close on the next target
+    hardware_arm.sent.clear()
+    assert arm.recover() == "" and hardware_arm.sent == []  # nothing wrong: nothing is sent
+
+
+def test_a_teaching_mode_that_has_ended_is_left_without_a_reset(quick):
+    hardware_arm = FaultyArm(gentle=True)
+    assert pen_arm(hardware_arm).recover() == "示教模式"
+    assert hardware_arm.sent == ["hold", ("speed", 30)]  # the motors never let go
+
+
+@pytest.mark.parametrize("arm", [{"teach": 1}, {"enabled": False}])
+def test_an_arm_still_dragged_or_without_its_motors_is_not_held_first(quick, arm):
+    hardware_arm = FaultyArm(gentle=True, **arm)
+    from tablet_tap.robot import piper
+
+    assert piper.leave_teaching(hardware_arm) is False and hardware_arm.sent == []
+
+
+def test_a_click_takes_the_arm_out_of_a_teaching_mode_by_itself(bench, quick):
+    con, client, _ = bench
+    taught(con, client)
+    hardware_arm = FaultyArm(gentle=True)
+    con.arm, con.arm_mode = web.LockedArm(pen_arm(hardware_arm)), web.ArmMode.COMMAND
+    ran = []
+    try:
+        assert "teaching" in client.get("/api/state").get_json()["fault"]
+        assert con.submit("清空修正", lambda: None)  # nothing that moves: left alone
+        wait_idle(con)
+        assert hardware_arm.sent == []
+        assert con.submit("夹爪", lambda: ran.append(hardware_arm.mode))
+        wait_idle(con)
+        assert ran == [1] and hardware_arm.sent == ["hold", ("speed", 30)]
+        assert client.get("/api/state").get_json()["fault"] == "" and "已自动切回" in log_text(client)
+        assert con.arm._arm._grip_width_m == pytest.approx(0.0996)
+    finally:
+        con.arm, con.arm_mode = None, None
+
+
+@pytest.mark.parametrize(("arm", "said"), [({"teach": 1, "gentle": True}, "还在拖动示教"), ({}, "故障恢复")])
+def test_an_arm_that_cannot_be_taken_back_gently_is_not_moved(bench, quick, arm, said):
+    con, client, _ = bench
+    taught(con, client)
+    hardware_arm = FaultyArm(**arm)
+    con.arm, con.arm_mode = web.LockedArm(pen_arm(hardware_arm)), web.ArmMode.COMMAND
+    ran = []
+    try:
+        assert con.submit("夹爪", lambda: ran.append(1))
+        wait_idle(con)
+        assert ran == [] and said in log_text(client) and "reset" not in hardware_arm.sent
+    finally:
+        con.arm, con.arm_mode = None, None
+
+
+def test_an_arm_that_does_not_come_back_says_so(quick):
+    from tablet_tap.errors import ArmConnectionError
+
+    with pytest.raises(ArmConnectionError, match="恢复失败.*示教模式"):
+        pen_arm(FaultyArm(comes_back=False)).recover()
+
+
+def test_the_page_recovers_a_faulty_arm(bench, quick, monkeypatch):
+    con, client, _ = bench
+    taught(con, client)
+    monkeypatch.setattr(con, "_hardware_free", lambda what: None)
+    page = client.get("/console").get_data(as_text=True)
+    assert 'id="recover"' in page and client.get("/api/state").get_json()["can_recover"]
+    cmd(con, client, cmd="recover")  # the software arm has nothing to recover
+    assert "没有故障可恢复" in log_text(client)
+    con.fake = False
+    try:
+        assert "扶住" in cmd(con, client, 400, cmd="recover").get_json()["error"]
+        hardware_arm = FaultyArm()
+        con.arm, con.arm_mode = web.LockedArm(pen_arm(hardware_arm)), web.ArmMode.COMMAND
+        assert "teaching" in client.get("/api/state").get_json()["fault"]
+        cmd(con, client, cmd="recover", attended=True)
+        state = client.get("/api/state").get_json()
+        assert state["fault"] == "" and state["arm"]["connected"] and "已恢复（原来是：示教模式）" in log_text(client)
+        con.arm, con.arm_mode = None, None
+        monkeypatch.setattr(web.piper, "recover_unconnected", lambda channel, firmware: "急停")
+        cmd(con, client, cmd="recover", attended=True)
+        assert "已恢复（原来是：急停）；现在可以点“连接”" in log_text(client)
+    finally:
+        con.fake, con.arm, con.arm_mode = True, None, None
+
+
+def test_the_time_and_the_gap_of_a_tap_are_set_on_the_page(bench):
+    con, client, _ = bench
+    taught(con, client)
+    setup = client.get("/api/state").get_json()["setup"]
+    assert (setup["tap_ms"], setup["tap_gap_mm"]) == (60, 2.0)
+    assert 'id="tap-ms"' in client.get("/console").get_data(as_text=True)
+    planner = lambda: TapPlanner(con.setup.pen_arm(), con.arm._arm.screen, con.setup.motion_limits())  # noqa: E731
+    hover_over(con, 0.5, 0.5)
+    before = planner().tap(con.arm._arm.q, 0.5, 0.5)
+    for bad in ({"time_ms": 5000}, {"time_ms": -1}, {"gap_mm": 0.2}, {"gap_mm": 9}, {"time_ms": "x"}):
+        cmd(con, client, 400, cmd="set_tap", **bad)
+    cmd(con, client, cmd="set_tap", time_ms="200", gap_mm="")
+    setup = client.get("/api/state").get_json()["setup"]
+    assert (setup["tap_ms"], setup["tap_gap_mm"]) == (200, 2.0)
+    cmd(con, client, cmd="set_tap", time_ms=0, gap_mm=4)
+    after = planner().tap(con.arm._arm.q, 0.5, 0.5)
+    assert [s.name for s in after] == [s.name for s in before] and (before[2].hold_s, after[2].hold_s) == (0.06, 0.0)
+    height = lambda s: con.arm._arm.screen.uv_of(con.setup.pen_arm().fk(s.q[-1])[:3, 3])[2] * 1e3  # noqa: E731
+    assert height(after[1]) - height(before[1]) == pytest.approx(2.0, abs=0.2)  # it waits higher above the glass
+    assert height(after[2]) == pytest.approx(height(before[2]), abs=0.2)  # and goes as deep
+    saved = config.SetupStore(con.store.path).load().limits
+    assert saved["dip_dwell_s"] == 0 and saved["dip_m"] == pytest.approx(0.004)
+
+
+def test_how_long_the_newest_touch_lasted(bench):
+    con, client, _ = bench
+    assert client.get("/api/state").get_json()["contact_ms"] is None
+    for kind, t in (("pointerdown", 100), ("pointermove", 200), ("pointerup", 430), ("pointerdown", 440), ("pointerup", 446)):
+        con.calib.add_touch({"type": kind, "u": 0.5, "v": 0.5, "t_ms": t})
+    assert client.get("/api/state").get_json()["contact_ms"] == 330  # the 6 ms after it are the contact breaking up

@@ -29,12 +29,9 @@ TIP_FRAME = "pen_tip"
 FINGERTIP_IN_FLANGE = pin.SE3(np.diag([-1.0, -1.0, 1.0]), np.array([0.0, 0.0, 0.143]))
 DEFAULT_TIP_LEN_M = 0.065  # pen tip beyond the fingertip plane (holder frame Z_H = 65 mm); measure on the bench
 
-# What the real arm's driver accepts (real_robot.conversions.REAL_JOINT_LIMITS_RAD; kept here so that planning needs
-# no robot libraries, and checked against it by the tests).
-DRIVER_JOINT_LIMITS_RAD = np.array(
-    [[-2.618, 2.618], [0.0, 3.1416], [-2.9671, 0.0], [-1.81, 1.81], [-1.35, 1.35], [-2.82, 2.82]], dtype=np.float64
-)
-LIMIT_MARGIN_RAD = 0.05  # SafetyFilter clamps at 0.02; planning stays further inside so that it never clamps
+# How far inside the limits planning stays: the driver clamps 0.02 rad inside the same limits, so it never clamps a
+# planned target. (0.05 until the limits were the firmware's own; the bench has run with 0.025 since 2026-11-23.)
+LIMIT_MARGIN_RAD = 0.025
 
 DAMPING = 0.02
 ROT_LENGTH = 0.15  # metres per radian: how a rotation error is weighed against a position error
@@ -71,9 +68,12 @@ def model_joint_limits(urdf_path: str | pathlib.Path = URDF_PATH) -> np.ndarray:
     return np.stack([model.lowerPositionLimit, model.upperPositionLimit], axis=1)
 
 
-# Planning keeps to what the real arm's driver accepts, as before the URDF was the model: the URDF's own limits are
-# the simulator's (narrower on joints 4 and 5, wider on joint 6) and are not what stops the real arm.
-JOINT_LIMITS_RAD = DRIVER_JOINT_LIMITS_RAD
+# Planning keeps to the URDF's limits, and those are where the firmware of the bench's left arm, which holds the pen,
+# stops its joints, on the arm's own readings: +-150, 0..180, -170..0, +-100, -70..75 and +-180 deg. Both bench arms
+# were read on 2026-11-23 (the `limits` command) and the URDF, which had the simulator's limits, was given these. The
+# right arm's joint 5 stops at 70 deg: what an arm's firmware holds is kept by channel in the setup
+# (config.ArmSetup.firmware_limits_deg) and goes before the URDF.
+JOINT_LIMITS_RAD = model_joint_limits()
 
 
 @dataclasses.dataclass(frozen=True)

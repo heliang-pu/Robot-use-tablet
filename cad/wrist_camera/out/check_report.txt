@@ -1,0 +1,15 @@
+base: solid valid True, watertight True, bodies 1, size [60.0, 46.0, 27.0] mm, 15.8 cm3
+cradle: solid valid True, watertight True, bodies 1, size [64.0, 20.0, 34.0] mm, 9.7 cm3
+base vs kit screws (M3x10): 0.00 mm3
+tilt  0: lens 100 above the gripper axis, 80 ahead of the flange; overlap mm3 cradle/base 0.00, camera/base 0.00, M4/base 0.00, M4/cradle 0.00, M4 heads+nuts/camera+cradle 0.00, camera-screw driver/base 0.00
+tilt  5: lens 97 above the gripper axis, 80 ahead of the flange; overlap mm3 cradle/base 0.00, camera/base 0.00, M4/base 0.00, M4/cradle 0.00, M4 heads+nuts/camera+cradle 0.00, camera-screw driver/base 0.00
+tilt 10: lens 94 above the gripper axis, 79 ahead of the flange; overlap mm3 cradle/base 0.00, camera/base 0.00, M4/base 0.00, M4/cradle 0.00, M4 heads+nuts/camera+cradle 0.00, camera-screw driver/base 0.00
+tilt 15: lens 90 above the gripper axis, 79 ahead of the flange; overlap mm3 cradle/base 0.00, camera/base 0.00, M4/base 0.00, M4/cradle 0.00, M4 heads+nuts/camera+cradle 0.00, camera-screw driver/base 0.00
+tilt 20: lens 87 above the gripper axis, 78 ahead of the flange; overlap mm3 cradle/base 0.00, camera/base 0.00, M4/base 0.00, M4/cradle 0.00, M4 heads+nuts/camera+cradle 0.00, camera-screw driver/base 0.00
+tilt 25: lens 84 above the gripper axis, 77 ahead of the flange; overlap mm3 cradle/base 0.00, camera/base 0.00, M4/base 0.00, M4/cradle 0.00, M4 heads+nuts/camera+cradle 0.00, camera-screw driver/base 0.00
+tilt 30: lens 82 above the gripper axis, 75 ahead of the flange; overlap mm3 cradle/base 0.00, camera/base 0.00, M4/base 0.00, M4/cradle 0.00, M4 heads+nuts/camera+cradle 0.00, camera-screw driver/base 0.00
+tilt 35: lens 79 above the gripper axis, 73 ahead of the flange; overlap mm3 cradle/base 0.00, camera/base 0.00, M4/base 0.00, M4/cradle 0.00, M4 heads+nuts/camera+cradle 0.00, camera-screw driver/base 0.00
+
+Against the kit STEP (M-D088-180006-A and the gripper): no sampled point of base, cradle or camera lies inside the kit mount at tilt 0-35;
+base to gripper 39 mm, camera/cradle to gripper 30 mm or more. Pen tip row in the 1080-row picture (design values): tilt 10 -> 1097 (out of
+the picture), 15 -> 936, 20 -> 785, 25 -> 639. Kit mount without the adapter: about 560, the middle of the picture.

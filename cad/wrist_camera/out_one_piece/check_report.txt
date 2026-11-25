@@ -1,0 +1,6 @@
+solid valid True, STL watertight True, bodies 1, size [99.5, 105.6, 48.6] mm, 64.2 cm3
+colour lens 100 above the gripper axis, 2.5 to the left, 50 ahead of the flange; axis 15.00 deg below the gripper axis
+overlap mm3: D435 0.00, camera screw heads 0.00, camera screwdriver 0.00, hex key to the gripper screws 0.00
+gripper screws: kit holes kept: [0.0, 0.0]
+pen tip (85 mm pen) in the 1080p picture: column 977, row 890 of 1080
+against the kit CAD arm and gripper: mount 0.00 mm3 (the kit mount itself 0.00), D435 0.00

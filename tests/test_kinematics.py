@@ -23,12 +23,14 @@ def test_the_urdf_is_the_arm_the_bench_drives():
     assert kinematics.URDF_PATH.is_file()
     model = pin.buildModelFromUrdf(str(kinematics.URDF_PATH))
     assert model.nq == 6 and list(model.names)[1:] == [f"joint{i}" for i in range(1, 7)]
-    from real_robot import conversions as rc
-
-    assert np.allclose(kinematics.DRIVER_JOINT_LIMITS_RAD, rc.REAL_JOINT_LIMITS_RAD, atol=1e-4)
-    assert kinematics.JOINT_LIMITS_RAD is kinematics.DRIVER_JOINT_LIMITS_RAD  # planning keeps to the driver's limits
-    # the simulator's limits in the URDF are close to them but not the same (joints 4, 5 narrower, joint 6 wider)
-    assert np.abs(kinematics.model_joint_limits() - kinematics.DRIVER_JOINT_LIMITS_RAD).max() < 0.2
+    # its limits are where the firmware of the bench's left arm, which holds the pen, stops the joints (read on
+    # 2026-11-23; the right arm's joint 5 stops at 70 deg, which its row in the setup says), and planning keeps to them
+    firmware = np.radians([[-150, 150], [0, 180], [-170, 0], [-100, 100], [-70, 75], [-180, 180]])
+    assert np.allclose(kinematics.model_joint_limits(), firmware, atol=1e-9)
+    assert np.array_equal(kinematics.JOINT_LIMITS_RAD, kinematics.model_joint_limits())
+    with_gripper = pin.buildModelFromUrdf(str(kinematics.URDF_PATH.with_name("CobotMagicWithGripperV100.urdf")))
+    assert np.allclose(with_gripper.lowerPositionLimit[:6], firmware[:, 0], atol=1e-9)
+    assert np.allclose(with_gripper.upperPositionLimit[:6], firmware[:, 1], atol=1e-9)
 
 
 def test_forward_kinematics_equals_the_bench_chain():

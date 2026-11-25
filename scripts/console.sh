@@ -3,8 +3,8 @@
 #
 #   scripts/console.sh start [--fake]   后台启动；已经在跑就只报告状态
 #   scripts/console.sh stop [--force]   停止；机械臂连着或正在执行时拒绝（--force 照停，手臂保持使能、停在原处）
-#   scripts/console.sh restart [--fake]
-#   scripts/console.sh status
+#   scripts/console.sh restart [--fake]  默认强制：连着手臂、正在执行也重启（先叫停，手臂保持使能、停在原处）
+#   scripts/console.sh status           整个台架的状态（scripts/status.py）：CAN、相机、控制台、标定、模型，还缺什么
 #
 # 端口：PORT（默认 8801，平板的标定页和操作页都用它）；HTTPS_PORT（默认 8443，浏览器里用麦克风说指令要走它，设 0 关掉）。
 # 日志：runs/console.log。
@@ -74,6 +74,11 @@ stop() {
       return 1
     fi
   fi
+  if [[ -n "$s" && "$(echo "$s" | field 'bool(d["busy"])')" == "True" ]]; then
+    echo "正在执行“$(echo "$s" | field 'd["busy"]')”：先叫停（手臂停在原处）"
+    curl -s --noproxy '*' -m 3 -X POST "http://127.0.0.1:$PORT/api/stop" >/dev/null || true
+    for _ in $(seq 20); do [[ "$(state | field 'bool(d["busy"])')" == "False" ]] && break; sleep 0.25; done
+  fi
   kill "$pid"
   for _ in $(seq 40); do kill -0 "$pid" 2>/dev/null || break; sleep 0.25; done
   if kill -0 "$pid" 2>/dev/null; then echo "进程 $pid 没有退出。"; return 1; fi
@@ -84,7 +89,7 @@ stop() {
 case "${1:-status}" in
   start) shift; start "$@" ;;
   stop) shift; stop "$@" ;;
-  restart) shift; if [[ "${1:-}" == "--force" ]]; then shift; stop --force; else stop; fi; start "$@" ;;
-  status) status ;;
+  restart) shift; [[ "${1:-}" == "--force" ]] && shift; stop --force; start "$@" ;;  # always: the arm stays enabled where it is
+  status) exec python3 "$ROOT/scripts/status.py" ;;  # 整个台架，不只控制台
   *) sed -n '2,11p' "${BASH_SOURCE[0]}"; exit 2 ;;
 esac

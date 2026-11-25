@@ -9,7 +9,6 @@ from helpers import true_screen
 import numpy as np
 import pytest
 
-from tablet_tap.core.kinematics import JOINT_LIMITS_RAD
 from tablet_tap.core.kinematics import pose
 from tablet_tap.core.motion import MotionLimits
 from tablet_tap.core.motion import TapPlanner
@@ -23,12 +22,6 @@ from tablet_tap.robot.arm import FakeArm
 from tablet_tap.robot.executor import run_segments
 from tablet_tap.robot.tablet_robot import ArmPlace
 from tablet_tap.robot.tablet_robot import TabletRobot
-
-
-def test_limits_match_the_robot_code():
-    from real_robot import conversions as rc
-
-    assert np.allclose(JOINT_LIMITS_RAD, rc.REAL_JOINT_LIMITS_RAD, atol=1e-4)
 
 
 def test_fk_ik_round_trip():
@@ -91,7 +84,7 @@ def test_tap_lands_on_the_point_and_stays_clear():
     first, second = pressed[pressed[:, 0] < 0.5], pressed[pressed[:, 0] > 0.5]
     for group, (u, v) in ((first, (0.2, 0.3)), (second, (0.9, 0.85))):
         assert screen.error_mm((u, v), tuple(group[:, :2].mean(axis=0))) < 0.3
-    assert uvh[:, 2].min() > -lim.press_m - 2e-4  # never deeper than the press
+    assert uvh[:, 2].min() > -lim.press_m - lim.dip_extra_m - 2e-4  # never deeper than the dip
     # below hover height the pen only moves along the normal: within 0.3 mm of one of the two points
     low = uvh[uvh[:, 2] < 0.9 * lim.hover_m]
     for u, v, _ in low:

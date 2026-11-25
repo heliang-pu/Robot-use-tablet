@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import pathlib
+import re
 import time
 from typing import Any, Protocol
 
@@ -67,6 +68,21 @@ def add_info_for(*, typing: bool) -> str:
 ADD_INFO_PRESETS = {"zh": ADD_INFO_ZH, "en": ADD_INFO_EN, "none": ""}
 
 
+def not_for_the_arm(said: str) -> str:
+    """Why the arm does not press what the model says it is about to press; "" when it does. A button that closes or
+    skips is pressed also when the words around it speak of money; that something else is pressed "in order to close"
+    does not make it one."""
+    said = said.removeprefix("Action:").strip()
+    parts = [p for p in _PURPOSE.split(said) if p]
+    target = (parts[0] if parts else said).strip()
+    closes = bool(_CLOSE_CONTROL.search(target))
+    if COSTS.search(said) and not closes:
+        return "模型要点的东西可能要花钱、授权或下载"
+    if len(parts) > 1 and _POPUP_OFF.search(said[len(target):]) and not closes and not CLOSES.search(target):
+        return "模型为了关掉弹窗或广告，要点的却不是关闭键"
+    return ""
+
+
 def resolve_add_info(value: str) -> str:
     """``zh`` / ``en`` / ``none`` name the texts above; anything else is taken as the text itself."""
     return ADD_INFO_PRESETS.get(value, value)
@@ -75,6 +91,26 @@ def resolve_add_info(value: str) -> str:
 PROJECT_DIR = pathlib.Path(__file__).resolve().parents[2]
 COORDINATE_KEYS = ("coordinate", "coordinate1", "coordinate2")  # the keys upstream's rescale_coordinates touches
 MODEL_COORD_RANGE = 1000.0  # the model's coordinates are 0-1000 over the image, whatever its aspect ratio
+# What the model says it is about to press: never pressed by the arm, the operator does that (on 2026-11-24 it pressed
+# "6元开通", a subscription, to get a pop-up out of the way).
+COSTS = re.compile(
+    r"开通|会员|续费|付款|付费|支付|购买|下单|充值|订阅|结算|转账|红包|提现|优惠券|立即使用|立即领取|立减|下载|安装|授权|验证码|密码|登录|登陆|手机号|注册|身份证|\d\s*元|[¥￥]"
+    r"|\bVIP\b|subscri|purchas|\bpay|\bbuy\b|checkout|renew|\bmember|coupon|claim|download|install|password|log ?in|sign ?(in|up)|phone number|verif",
+    re.IGNORECASE,
+)
+CLOSES = re.compile(r"关闭|跳过|取消|返回|拒绝|稍后|不再|\bclose|\bskip|\bcancel|\bdismiss", re.IGNORECASE)
+# What is pressed and what for are told apart: on 2026-11-24 the model wanted "点击弹窗中的绿色按钮以关闭广告", and the green
+# button was "去看视频".
+_PURPOSE = re.compile(r"以便?(?=关|跳|取消|返回|退|尝试|解除|清除|移除)|，|,|来(?=关|跳)|从而|\bto (?=close|skip|dismiss|cancel|get|try|remove|clear)")
+_POPUP_OFF = re.compile(
+    r"(关闭|关掉|跳过|清除|移除|解除|消除).{0,12}(广告|弹窗|弹出|浮层|优惠|会员|遮挡|视频)|\b(close|skip|dismiss|remove|clear)\b.{0,30}\b(ad|ads|advert\w*|pop-?up|dialog|overlay|video)\b",
+    re.IGNORECASE,
+)
+_CLOSE_CONTROL = re.compile(
+    r"(关闭|跳过|取消|返回|拒绝|稍后|以后再说|不再提醒|叉号?|空白|箭头|[×✕xX])[”\"」』）)]?(的)?(按钮|图标|键|选项|文字|链接|区域|处|标志|符号)?([（(][^）)]*[）)])?[。.\s]*$"
+    r"|\b(close|skip|cancel|dismiss|x)\b[\"”')]*\s*(button|icon|option|link|control|mark)\b|[\"“'](close|skip|cancel|dismiss|x|×|关闭|跳过|取消)[\"”']",
+    re.IGNORECASE,
+)
 STUCK_TOLERANCE = 15.0  # two clicks closer than this (in 0-1000 units, both axes) count as the same click
 MAX_WAIT_S = 10.0
 DEFAULT_WAIT_S = 2.0  # upstream: action_parameter.get("time", 2)
@@ -131,6 +167,11 @@ class GuiOwlLlm(up.GUIOwlWrapper):
             super().__init__(api_key, base_url, model_name, max_retry=max_retry)
         if retry_wait_s is not None:
             self.RETRY_WAITING_SECONDS = retry_wait_s
+        # the same picture and the same words give the same action; upstream's requests leave it to the server to sample
+        completions = getattr(getattr(getattr(self, "bot", None), "chat", None), "completions", None)
+        if completions is not None:
+            create = completions.create
+            completions.create = lambda **kwargs: create(**{"temperature": 0, **kwargs})
 
     def convert_messages_format_to_openaiurl(self, messages: list[dict]) -> list[dict]:
         """Strip ``file://`` from the image items, then convert as upstream does."""
@@ -336,6 +377,9 @@ class GuiAgent:
         """Execute one action. Returns (status, answer); status "" means the run goes on."""
         action = args["action"]
         device = self.device
+        said = thought(output)
+        if action in ("click", "long_press") and (why := not_for_the_arm(said)):
+            return "need_user", f"{why}，没有点：{said}"
         if action != "click":
             clicks.clear()
 

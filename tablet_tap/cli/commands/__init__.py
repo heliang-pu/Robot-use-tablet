@@ -13,6 +13,7 @@ from tablet_tap.cli.commands import taptest  # noqa: F401
 from tablet_tap.cli.commands import moves  # noqa: F401
 from tablet_tap.cli.commands import shot  # noqa: F401
 from tablet_tap.cli.commands import run  # noqa: F401
+from tablet_tap.cli.commands import wrist  # noqa: F401
 from tablet_tap.cli.commands.base import Command
 from tablet_tap.cli.commands.base import commands
 

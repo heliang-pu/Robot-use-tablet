@@ -1,0 +1,8 @@
+front: solid valid True, STL watertight True, bodies 1, size [68.0, 64.0, 56.2] mm, 57.1 cm3
+  overlap mm3: D435 0.00, post 0.00, M4 screws 0.00, M3 heads 0.00, M4 driver from behind 0.00, M3 driver 0.00
+rear: solid valid True, STL watertight True, bodies 1, size [66.0, 64.0, 35.0] mm, 45.5 cm3
+  overlap mm3: D435 0.00, post 0.00, M4 screws 0.00, M3 heads 0.00, M4 driver from behind 0.00, M3 driver 0.00
+front/rear overlap 0.00 mm3; D435 vs post 0.00, vs M4 screws 0.00, vs drivers from behind 0.00, M3 driver vs post 0.00
+colour lens: 62.0 in front of the post, 32.5 to the robot's left of the post centre, 19.2 below the clamp centre
+D435 reaches 74.1 in front of the post, 30.3 below / 5.0 above the clamp centre
+mounting: clamp centre 255 mm above the base-plate top (colour lens 236 mm); lower edge 223, upper edge 287

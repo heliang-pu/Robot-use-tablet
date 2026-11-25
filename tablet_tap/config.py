@@ -56,10 +56,22 @@ class ArmSetup:
     speed_percent: int = 30
     grip_force_n: float = 5.0
     tip_len: float = DEFAULT_TIP_LEN_M  # pen tip beyond the fingertip plane (m)
-    # Where the arm's firmware stops joint 5 (its readings, +-), when that is short of the driver's 77 deg: the left arm
-    # sent to 70.9 deg on 2026-11-23 stayed at 69.98 and the move never settled.
-    joint5_limit_deg: float | None = None
+    # Where each arm's firmware stops its joints, by CAN channel: six (lowest, highest) in degrees of the arm's own
+    # readings, as `limits` last read them. Planning and the driver's clamp keep to the row of ``channel``; an arm that
+    # was never read is taken to have the URDF's limits, which are the left arm's. (An arm stops at its firmware's
+    # limit: the left arm, sent to 70.9 deg on joint 5 on 2026-11-23 when that was 70, stayed at 69.98 and the move
+    # never settled.)
+    firmware_limits_deg: dict[str, list[list[float]]] = dataclasses.field(default_factory=dict)
     limit_margin_rad: float = LIMIT_MARGIN_RAD  # how far inside the limits to plan (the driver clamps at 0.02)
+
+    def reading_limits_rad(self) -> np.ndarray:
+        """(6, 2) the lowest and highest reading of each joint that this arm's firmware allows."""
+        rows = self.firmware_limits_deg.get(self.channel or "")
+        if rows is None:
+            return JOINT_LIMITS_RAD.copy()
+        if np.shape(rows) != (6, 2):
+            raise SetupError(f"配置里 {self.channel} 的固件限位应该是 6 对（最小、最大，度）；用 limits 再读一次。")
+        return np.radians(np.asarray(rows, np.float64))
 
 
 @dataclasses.dataclass
@@ -89,11 +101,7 @@ class Setup:
         # The arm's limits are on its own readings (reading = sign * joint + offset): planning, which works on the
         # corrected joints, has to keep to the same readings or the arm stops short of the target.
         signs, offsets = np.array(self.arm.joint_signs)[:, None], np.array(self.arm.joint_offsets)[:, None]
-        readings = JOINT_LIMITS_RAD.copy()
-        if self.arm.joint5_limit_deg is not None:
-            top = np.radians(self.arm.joint5_limit_deg)
-            readings[4] = np.clip(readings[4], -top, top)
-        limits = np.sort((readings - offsets) * signs, axis=1)
+        limits = np.sort((self.arm.reading_limits_rad() - offsets) * signs, axis=1)
         return PenArm(tip_len=float(self.arm.tip_len), limits=limits, margin=float(self.arm.limit_margin_rad))
 
     def on_screen_keyboard(self) -> Keyboard | None:
@@ -138,7 +146,14 @@ class Setup:
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> Setup:
         data = dict(data)
-        arm = ArmSetup(**{**dataclasses.asdict(ArmSetup()), **(data.pop("arm", None) or {})})
+        arm_data = dict(data.pop("arm", None) or {})
+        # files of 2026-11-23 have one number instead of the rows: the highest reading of joint 5 that `limits` wrote
+        joint5_top = arm_data.pop("joint5_limit_deg", None)
+        arm = ArmSetup(**{**dataclasses.asdict(ArmSetup()), **arm_data})
+        if joint5_top is not None and arm.channel and arm.channel not in arm.firmware_limits_deg:
+            rows = np.degrees(JOINT_LIMITS_RAD).round(1).tolist()
+            rows[4][1] = float(joint5_top)
+            arm.firmware_limits_deg[arm.channel] = rows
         screen_map = data.pop("screen_map", None)
         names = ("camera", "park_q", "seed_q", "aspect", "nav", "keyboard", "camera_pose", "screen_size_m")
         fields = {name: data.pop(name, None) for name in names}

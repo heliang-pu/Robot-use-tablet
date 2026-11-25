@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import enum
+import logging
 
 import numpy as np
 
@@ -10,6 +11,8 @@ from tablet_tap.config import ArmSetup
 from tablet_tap.errors import SetupError
 from tablet_tap.robot.arm import ArmIO
 from tablet_tap.robot.arm import FakeArm
+
+logger = logging.getLogger("tablet_tap.robot")
 
 FAKE_START_Q = (0.0, 0.6, -0.5, 0.0, 0.3, 0.0)
 
@@ -30,6 +33,8 @@ def open_arm(
         raise SetupError("还没有指定拿笔的机械臂：加上 --channel can_l_follower（左臂）或 can_r_follower（右臂）。")
     from tablet_tap.robot.piper import PiperPenArm  # noqa: PLC0415 - needs the robot libraries
 
+    if arm.channel not in arm.firmware_limits_deg:
+        logger.warning("还没有读过 %s 的固件限位，先按 URDF 里的走：运行一次 limits 读出来记下。", arm.channel)
     real = PiperPenArm(
         arm.channel,
         send_commands=mode is ArmMode.COMMAND,
@@ -38,6 +43,7 @@ def open_arm(
         firmware=arm.firmware,
         speed_percent=int(arm.speed_percent),
         grip_force_n=float(arm.grip_force_n),
+        joint_limits_rad=arm.reading_limits_rad(),
         allow_other_programs=allow_other_programs,
     )
     if mode is ArmMode.DRY_RUN:

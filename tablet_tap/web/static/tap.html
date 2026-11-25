@@ -52,9 +52,10 @@ h1 { font-size:20px; margin:0; }
 <body>
 <div class="app">
   <header class="topbar"><h1>平板点按</h1>
+    <div id="rec-row" style="display:flex;align-items:center;gap:10px;margin-right:auto;margin-left:14px"><label style="cursor:pointer"><input type="checkbox" id="rec" disabled> 录制三路相机</label><span class="note" id="rec-state">要重启控制台才能用</span><a class="note" id="rec-link" href="/rec" target="_blank" hidden>看录像</a></div>
     <div class="chips"><span class="chip" id="c-arm">左臂 <b>—</b></span><span class="chip" id="c-cam">相机 <b>—</b></span>
       <span class="chip" id="c-tab">平板 <b>—</b></span><span class="chip" id="c-page">标定页 <b>—</b></span></div></header>
-  <nav class="tabs"><button class="tab" data-tab="tap" aria-selected="true">点按</button><button class="tab" data-tab="prompt">指令</button><button class="tab" data-tab="log">日志</button></nav>
+  <nav class="tabs"><button class="tab" data-tab="tap" aria-selected="true">点按</button><button class="tab" data-tab="prompt">指令</button><button class="tab" data-tab="wrist">腕部相机</button><button class="tab" data-tab="log">日志</button></nav>
 
   <div data-pane="tap" style="display:flex;flex-direction:column;gap:10px">
     <section class="tally">
@@ -72,9 +73,12 @@ h1 { font-size:20px; margin:0; }
       <div class="side">
         <section class="panel"><button class="btn stop" id="stop">停止（空格）</button>
           <div class="row" style="margin-top:10px"><label><input type="checkbox" id="attended"> 有人能断电</label>
-            <button class="btn primary" id="start">连接</button><button class="btn" id="park">让开</button><button class="btn" id="disconnect">断开</button></div>
+            <button class="btn primary" id="start">连接</button><button class="btn" id="park" title="低速回停靠位">复位（让开）</button><button class="btn" id="disconnect">断开</button><button class="btn" id="recover" hidden title="清关节报错，急停 / 碰撞 / 示教模式时复位控制器，再使能，臂停在原地">故障恢复</button></div>
           <div class="row" style="margin-top:8px"><label><input type="checkbox" id="after" checked> 点完让开</label>
             <button class="btn" id="forget">清空修正</button></div>
+          <div class="row" style="margin-top:8px" id="tapset" hidden><label title="笔按在屏幕上停多久。实际接触还要加上下压和抬起，约多 0.15–0.25 秒；安卓 400–500 毫秒算长按">点击时间 <input type="number" id="tap-ms" min="0" max="2000" step="20" style="width:74px"> 毫秒</label>
+            <label title="点之前先停在屏幕上方多高等手臂停稳。太小时平板一挪就会提前碰到屏幕，变成长按">悬空 <input type="number" id="tap-gap" min="1" max="6" step="0.5" style="width:60px"> mm</label>
+            <button class="btn" id="tap-save">保存</button><span class="note" id="tap-real"></span></div>
           <div class="row" style="margin-top:8px"><b>夹爪</b><span class="seg" id="grip"><button class="btn" id="g-close" style="border:0;border-radius:0">夹紧笔夹</button><button class="btn" id="g-open" style="border:0;border-radius:0">松开</button></span><span class="note" id="g-mm"></span></div>
           <button class="btn primary" id="cal" style="width:100%;margin-top:10px">一键校准精度（约 3 分钟）</button>
           <div class="note" id="cal-info" style="margin-top:6px"></div>
@@ -104,11 +108,53 @@ h1 { font-size:20px; margin:0; }
             <button class="btn" id="pr-save">存为常用</button>
             <label class="note">最多步数 <input id="pr-steps" type="number" value="15" min="1" max="40" style="width:60px;padding:4px;border:1px solid var(--line);border-radius:6px;background:var(--sunken)"></label>
             <button class="btn stop" id="pr-stop" style="width:auto;padding:9px 22px;font-size:15px">停止</button></div>
-          <div class="note" id="pr-ready" style="margin-top:8px"></div></section>
+          <div class="note" id="pr-ready" style="margin-top:8px"></div>
+          <div class="row" style="margin-top:8px"><span class="note" id="pr-model"></span>
+            <button class="btn" id="pr-model-start" style="padding:4px 10px;font-size:13px">启动模型</button>
+            <button class="btn" id="pr-model-stop" style="padding:4px 10px;font-size:13px" hidden>停止模型（让出显卡）</button></div></section>
+        <section class="panel"><b>平板的主页键和返回键</b>
+          <div class="note" id="pr-nav" style="margin-top:6px"></div>
+          <div class="row" style="margin-top:8px"><button class="btn" id="pr-nav-home" style="padding:4px 10px;font-size:13px">试主页键</button>
+            <button class="btn" id="pr-nav-back" style="padding:4px 10px;font-size:13px">试返回键</button>
+            <button class="btn" id="pr-nav-set-home" style="padding:4px 10px;font-size:13px">把刚才点的位置记成主页键</button>
+            <button class="btn" id="pr-nav-set-back" style="padding:4px 10px;font-size:13px">记成返回键</button>
+            <button class="btn" id="pr-nav-gesture" style="padding:4px 10px;font-size:13px">平板是手势导航</button></div>
+          <div class="note" style="margin-top:6px">不对的话：到“点按”页在屏幕图上点一下那个键，回来点“记成…”。</div></section>
         <section class="panel"><b>以前的指令</b><div id="pr-history" style="margin-top:6px"></div></section>
       </div>
       <section class="panel"><div class="row" style="justify-content:space-between"><b id="pr-title">执行过程</b><span class="note" id="pr-status"></span></div>
         <div id="pr-steps-box" style="margin-top:8px"></div></section>
+    </div>
+  </div>
+  <div data-pane="wrist" hidden>
+    <div class="main" style="grid-template-columns:minmax(300px,1fr) minmax(0,1.5fr)">
+      <div class="side">
+        <section class="panel"><div class="row" style="justify-content:space-between"><b>腕部相机</b><span class="note" id="wr-camera"></span></div>
+          <div class="note" id="wr-steps" style="margin-top:8px;white-space:pre-wrap"></div>
+          <div class="row" style="margin-top:10px"><label>支架 <select id="wr-mount" style="padding:4px 6px"></select></label>
+            <label><input type="checkbox" id="wr-attended"> 有人能断电</label></div>
+          <div style="display:grid;gap:8px;margin-top:10px">
+            <button class="btn" id="wr-find">⓪ 顶部相机挪过或没标定：用腕部相机找平板</button>
+            <button class="btn" id="wr-plan">① 试算一遍（手臂不动）</button>
+            <button class="btn primary" id="wr-calib">② 标定腕部相机（走 14 个位姿，约 2 分钟）</button>
+            <button class="btn" id="wr-view">③ 去看屏位拍画面（平板挪动后重做）</button>
+            <button class="btn" id="wr-again">换一个角度再拍（屏幕上有灯的反光时）</button>
+            <button class="btn" id="wr-second">躲不开反光：从第二个角度再拍一张，两张互补</button>
+            <button class="btn" id="wr-top" hidden>④ 改用腕部标定算出的顶部相机位置</button>
+            <button class="btn" id="wr-shot">拍一张看看</button>
+            <button class="btn stop" id="wr-stop">停止</button></div>
+          <label style="display:block;margin-top:12px"><input type="checkbox" id="wr-use"> 指令用腕部相机看屏幕</label>
+          <label style="display:block;margin-top:6px"><input type="checkbox" id="wr-merge"> 看屏时两个角度合成（去反光，每一步多走一趟）</label>
+          <div class="note" id="wr-hint" style="margin-top:8px"></div></section>
+        <section class="panel"><b>结果</b><div class="note" id="wr-result" style="margin-top:6px;white-space:pre-wrap"></div></section>
+        <section class="panel"><b>备用：新支架没装好，只用顶部相机时</b>
+          <div class="note" style="margin-top:6px">原装支架上笔尖在腕部画面正中间，看不全屏幕，这一页就用不了。只用顶部相机看屏幕的话，现在的停靠位会挡住屏幕左边约四分之一：把停靠位的 1 号关节左转 40° 就不挡（其余关节不变；左边有没有东西请先看一眼）。</div>
+          <button class="btn" id="wr-park" style="margin-top:8px">停靠位左转到 40°（手臂会低速转过去）</button></section>
+      </div>
+      <div>
+        <section class="panel"><b>腕部相机的画面</b><div class="box" style="margin-top:6px"><img id="wr-picture" alt=""><div class="empty" id="wr-p-empty">还没有画面</div></div></section>
+        <section class="panel"><b>拉正后的屏幕（模型看到的就是它）</b><div class="box" style="margin-top:6px"><img id="wr-screen" alt=""><div class="empty" id="wr-s-empty">还没有画面</div></div></section>
+      </div>
     </div>
   </div>
   <div data-pane="log" hidden><section class="panel"><div id="log"></div><div class="note" style="margin-top:6px"><a href="/console/full" id="full">完整控制台</a></div></section></div>
@@ -130,6 +176,11 @@ $('stop').onclick = stopNow;
 $('start').onclick = () => cmd({cmd:'start', channel:'can_l_follower', attended:$('attended').checked});
 $('disconnect').onclick = () => cmd({cmd:'disconnect'});
 $('park').onclick = () => cmd({cmd:'park'});
+let tapEdited = false;
+for (const id of ['tap-ms','tap-gap']) { $(id).oninput = () => tapEdited = true; $(id).onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') $('tap-save').click(); }; }
+$('tap-save').onclick = async () => { await cmd({cmd:'set_tap', time_ms:$('tap-ms').value, gap_mm:$('tap-gap').value}); setTimeout(() => tapEdited = false, 1200); };
+$('recover').onclick = () => confirm('故障恢复：先把卡住手臂的东西拿开，扶住左臂。不断电。只是没退出示教模式时直接切回来；急停、碰撞、或切不回来时才复位控制器（关节会短暂没力），再重新使能。臂停在原地。有人能断电、已经扶住了？') && cmd({cmd:'recover', channel:'can_l_follower', attended:$('attended').checked});
+const faultText = f => /teaching/.test(f) ? '手臂停在示教模式：拖动结束后，直接点要做的动作，会自动切回（没切回来再点“故障恢复”）' : /collision/.test(f) ? '手臂发生碰撞：拿开碰到的东西，点“故障恢复”' : /emergency stop \(arm_status/.test(f) ? '手臂急停：确认安全后点“故障恢复”' : /off the CAN bus|没有回应|status/.test(f) ? '收不到手臂的数据：查电源和 CAN 线，好了点“断开”再“连接”（' + f + '）' : f;
 $('forget').onclick = () => cmd({cmd:'forget_contacts'});
 $('g-close').onclick = () => cmd({cmd:'grip', close:true});
 $('g-open').onclick = () => confirm('松开后笔夹会掉，先用手扶住。确定松开？') && cmd({cmd:'grip', close:false});
@@ -170,7 +221,7 @@ function render(s) {
   $('t-last').textContent = l ? (l.error_mm === null ? '没点到' : mm(l.error_mm)) : '—'; $('t-last-s').textContent = l ? (l.slow ? '慢速下探' : '正常点按') : 'mm';
   $('t-mean').textContent = mm(a.fast_mean); $('t-max').textContent = mm(a.fast_max); $('t-mean-s').textContent = a.fast_n ? `${a.fast_n} 次正常点按` : 'mm';
   $('t-n').textContent = a.n ? `${a.registered} / ${a.n}` : '—'; $('t-n-s').textContent = `触点修正 ${a.contacts} 个`;
-  $('hint').textContent = s.fault ? '故障：' + s.fault : t.reach ? t.reach : a.affine ? '已校准：直接点按' : s.setup.screen_map ? '还在校准：慢速下探，碰到就停。点四角和中间共 4 个以上，之后自动变成正常点按' : '等相机认出平板';
+  $('hint').textContent = s.fault ? '故障：' + faultText(s.fault) : t.reach ? t.reach : a.affine ? '已校准：直接点按' : s.setup.screen_map ? '还在校准：慢速下探，碰到就停。点四角和中间共 4 个以上，之后自动变成正常点按' : '等相机认出平板';
   $('hint').className = 'note' + (s.fault || t.reach ? ' bad' : '');
   let g = ''; if (l) { const e = (x, y, c, f) => `<ellipse cx="${x}" cy="${y}" rx=".012" ry=".0192" fill="${f ? c : 'none'}" stroke="${c}" stroke-width=".004"/>`;
     g = e(l.u, l.v, '#2f7fe8', false); if (l.tu !== null) g += `<ellipse cx="${l.tu}" cy="${l.tv}" rx=".005" ry=".008" fill="#e83030"/>`; }
@@ -179,7 +230,11 @@ function render(s) {
   const c = s.results && s.results.calibration;
   $('cal-info').textContent = s.progress ? `${s.progress.job} ${s.progress.i}/${s.progress.n}` : c ? `检验 ${c.n} 点：平均 ${mm2(c.mean_mm)}，95% ${mm2(c.p95_mm)}，最大 ${mm2(c.max_mm)} mm；≤1 mm ${c.within_1mm}/${c.n}（校准前 ${mm2(c.before_mean_mm)}）` : a.correction || '';
   for (const id of ['g-close','g-open','cal']) $(id).disabled = !!s.busy || !s.arm.moves;
-  for (const id of ['start','park','forget','disconnect']) $(id).disabled = !!s.busy;
+  for (const id of ['start','park','forget','disconnect','recover']) $(id).disabled = !!s.busy;
+  $('tapset').hidden = s.setup.tap_ms === undefined; $('tap-save').disabled = !!s.busy;
+  if (!tapEdited && s.setup.tap_ms !== undefined) { $('tap-ms').value = s.setup.tap_ms; $('tap-gap').value = s.setup.tap_gap_mm; }
+  $('tap-real').textContent = s.contact_ms ? `上次实测接触 ${s.contact_ms} 毫秒` + (s.contact_ms >= 400 ? '，会算长按' : '') : '';
+  $('recover').hidden = !s.can_recover; $('recover').className = 'btn' + (s.fault ? ' primary' : '');
   document.querySelectorAll('[data-key]').forEach(b => b.disabled = !!s.busy || !s.arm.moves);
   const box = $('log'), end = box.scrollTop + box.clientHeight >= box.scrollHeight - 8;
   for (const line of s.log) { const d = document.createElement('div'), m = document.createElement('span'); m.textContent = line.t; d.append(m, line.text); box.append(d); since = Math.max(since, line.i);
@@ -188,8 +243,26 @@ function render(s) {
   $('c-empty').style.display = s.camera.has_frame ? 'none' : 'flex'; $('s-empty').style.display = s.camera.has_frame && s.camera.calibrated ? 'none' : 'flex';
 }
 async function poll() { try { render(await (await fetch(url('/api/state?log_since=' + since))).json()); } catch (e) { $('t-state').textContent = '控制台断开'; } setTimeout(poll, 350); }
-function pictures() { if (state && state.camera.has_frame) { const t = Date.now(); $('cam').src = url('/api/camera.jpg?w=960&t=' + t); if (state.camera.calibrated) $('screen').src = url('/api/screen.jpg?w=1280&t=' + t); } setTimeout(pictures, 500); }
-poll(); pictures();
+// each picture is asked for when the one before has come: as fast as the network carries them, never piling up
+function feed(id, path, wanted) {
+  const img = $(id), go = () => { if (document.hidden || img.closest('[data-pane]').hidden || !wanted()) return setTimeout(go, 400);
+    const began = performance.now(); let over = false;
+    const next = () => { if (over) return; over = true; clearTimeout(guard); setTimeout(go, Math.max(0, 100 - (performance.now() - began))); };
+    const guard = setTimeout(next, 3000); img.onload = img.onerror = next; img.src = url(path + '&t=' + Date.now()); };
+  go();
+}
+feed('cam', '/api/camera.jpg?w=960', () => state && state.camera.has_frame);
+feed('screen', '/api/screen.jpg?w=1120', () => state && state.camera.has_frame && state.camera.calibrated);
+poll();
+
+// ---- 录像 ----
+(() => {
+  $('rec-link').href = url('/rec');
+  $('rec').onchange = async () => { try { const r = await fetch(url('/api/rec/on'), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({on:$('rec').checked})}); if (!r.ok) toast((await r.json()).error || r.status); } catch (e) { toast('连不上控制台：' + e); } };
+  async function tick() { try { const r = await fetch(url('/api/rec/state')); if (r.ok) { const s = await r.json(); $('rec').disabled = false; $('rec-link').hidden = false; if (document.activeElement !== $('rec')) $('rec').checked = s.on;
+      $('rec-state').textContent = s.recording ? `● 正在录 ${s.seconds} 秒` : s.making ? '正在合成视频' : s.on ? '下次操作自动录' : ''; } } catch (e) {} setTimeout(tick, 1000); }
+  tick();
+})();
 
 // ---- 指令 ----
 (() => {
@@ -218,6 +291,10 @@ poll(); pictures();
   async function tick() { try { const q = !viewing && shown ? `?id=${shown}&since=${drawn}` : ''; const r = await load('/api/run/state' + q);
       if (note === null) { note = r.add_info; $('pr-note').value = note; }
       $('pr-ready').textContent = r.missing.length ? '还不能执行：' + r.missing.join('；') : r.busy ? '正在' + r.busy : '可以执行（Ctrl + 回车也行）'; $('pr-ready').className = 'note' + (r.missing.length ? ' bad' : '');
+      const m = r.model, g = m.gpu; gpuNow = g;
+      $('pr-model').textContent = '模型：' + (m.serving ? '在运行' : m.starting ? '正在加载… ' + (m.log[m.log.length - 1] || '').slice(0, 80) : '没有启动') + (g ? `（显卡已用 ${(g.used_mib / 1024).toFixed(1)} / ${(g.total_mib / 1024).toFixed(0)} GB）` : '');
+      $('pr-model-start').hidden = m.serving || m.starting; $('pr-model-stop').hidden = !m.ours;
+      $('pr-nav').textContent = (r.nav ? `主页键 (${r.nav.home ? r.nav.home.join(', ') : '没设'})，返回键 (${r.nav.back ? r.nav.back.join(', ') : '没设'})` : '手势导航：主页 = 从底边往上划，返回 = 从左边往里划') + (r.last_tap ? `；刚才在“点按”页点的位置 (${r.last_tap.join(', ')})` : '');
       $('pr-go').disabled = !!r.busy || r.missing.length > 0;
       if (r.run && !viewing) showRun(r.run, false);
       const running = !!(r.run && r.run.status === 'running'); if (wasRunning && !running) history(); wasRunning = running; } catch (e) { $('pr-ready').textContent = '控制台断开'; } setTimeout(tick, 800); }
@@ -246,7 +323,76 @@ poll(); pictures();
       node.onaudioprocess = e => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0))); source.connect(node); node.connect(ctx.destination);
       rec = {stream, ctx, node, chunks}; $('pr-mic').textContent = '■ 说完了'; } catch (e) { toast('打不开麦克风：' + e.message); } };
   load('/api/run/presets').then(r => { presets = r.presets; showPresets(); }).catch(() => {});
+  let gpuNow = null;
+  const act = async (path, data) => { try { await send(path, data); } catch (e) { toast(e.message); } };
+  $('pr-model-start').onclick = () => confirm(`启动 GUI-Owl 8B：占显卡约 24 GB（现在空闲 ${gpuNow ? (gpuNow.free_mib / 1024).toFixed(0) : '?'} GB），加载要一两分钟；显存不够它会自己拒绝。别人要用显卡时在这里点“停止模型”。启动？`) && act('/api/run/model', {action:'start'});
+  $('pr-model-stop').onclick = () => confirm('停止模型服务，让出显卡？') && act('/api/run/model', {action:'stop'});
+  $('pr-nav-home').onclick = () => cmd({cmd:'home', park:true});
+  $('pr-nav-back').onclick = () => cmd({cmd:'back', park:true});
+  $('pr-nav-set-home').onclick = () => act('/api/run/nav', {home:'last'});
+  $('pr-nav-set-back').onclick = () => act('/api/run/nav', {back:'last'});
+  $('pr-nav-gesture').onclick = () => confirm('平板用的是手势导航（屏幕底下没有三个键）？主页和返回会改成从边缘划。') && act('/api/run/nav', {gestures:true});
   history(); tick();
+})();
+
+// ---- 腕部相机 ----
+(() => {
+  const post = async data => { try { const r = await fetch(url('/api/wrist/cmd'), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+    if (!r.ok) toast((await r.json().catch(() => ({}))).error || r.status); return r.ok; } catch (e) { toast('连不上控制台：' + e); return false; } };
+  const job = (cmd, extra) => post({cmd, attended: $('wr-attended').checked, ...(extra || {})});
+  const px = v => v === null || v === undefined ? '—' : Number(v).toFixed(1);
+  let mounts = '', shown = {};
+  $('wr-find').onclick = () => confirm('用在顶部相机挪过、或者还没标定的时候。平板放在左臂正前方、中心离底座约 32 cm，全屏显示标定页；手臂会抬到它上方约 10 cm 处看一眼再回停靠位。之后顶部相机暂时不参与，标定完会重新算出它的位置。开始？') && job('find');
+  $('wr-top').onclick = () => confirm('顶部相机的位置改用腕部标定算出的那个（原来的会留底）。确定？') && post({cmd:'top'});
+  $('wr-park').onclick = () => confirm('手臂会从停靠位低速把 1 号关节转到左 40°，并把那里记成新的停靠位。途中没有碰撞检查：左边要是有东西先挪开，有人能断电。开始？') && cmd({cmd:'park_turn', j1_deg:40, attended:$('wr-attended').checked});
+  $('wr-plan').onclick = () => job('plan');
+  $('wr-calib').onclick = () => confirm('手臂会低速走 14 个位姿拍标定页，笔不碰屏幕，最后回停靠位。平板要全屏显示标定页、放稳，有人能断电。开始？') && job('calibrate');
+  $('wr-view').onclick = () => confirm('手臂会去看屏位拍一张再回停靠位。平板要全屏显示标定页。开始？') && job('view');
+  $('wr-again').onclick = () => job('view', {another: true});
+  $('wr-second').onclick = () => job('view2');
+  $('wr-merge').onchange = async e => { if (!await post({cmd:'merge', on:e.target.checked})) e.target.checked = !e.target.checked; };
+  $('wr-shot').onclick = () => job('shot');
+  $('wr-stop').onclick = stopNow;
+  $('wr-use').onchange = async e => { if (!await post({cmd:'use', on:e.target.checked})) e.target.checked = !e.target.checked; };
+  $('wr-mount').onchange = async e => { if (!confirm('换支架会清掉手眼标定和看屏位。确定？') || !await post({cmd:'mount', mount:e.target.value})) mounts = ''; };
+  function render(s) {
+    $('wr-camera').textContent = s.camera + (s.simulated ? '（模拟）' : '');
+    if (mounts !== s.mounts.join()) { mounts = s.mounts.join(); const box = $('wr-mount'); box.textContent = '';
+      for (const m of s.mounts) { const o = document.createElement('option'); o.value = m; o.textContent = m === 'tap' ? 'tap（新打印的高支架）' : m === 'kit' ? 'kit（原装支架，笔尖在画面中间）' : m; box.appendChild(o); } }
+    if (document.activeElement !== $('wr-mount')) $('wr-mount').value = s.mount;
+    const h = s.hand_eye, v = s.view;
+    $('wr-steps').textContent = '手眼标定：' + (s.calibrated && h ? `已做（${h.at || ''}）没参加拟合的位姿 ${px(h.held_out_px)} px，离支架图纸 ${px(h.off_drawing_mm)} mm / ${px(h.off_drawing_deg)}°` : '还没有做（相机位置暂按支架图纸）')
+      + '\n顶部相机：' + (s.top.known ? '位置已知，负责粗定位和跟踪' + (s.top.pending ? '（这次标定算出了另一个位置，见 ④）' : '') : '位置未知，暂时不参与（做完 ② 会算出来）')
+      + '\n看屏位的画面：' + (v ? `屏幕 ${Math.round(v.width_px)} × ${Math.round(v.height_px)} px，边缘过渡 ${px(v.edge_px)} px，认出 ${v.markers} 个码${v.glare > 0.005 || v.markers < 6 ? '，⚠ 有反光（暗处 ' + (100 * v.glare).toFixed(1) + '% 发亮）' : ''}（${v.at || ''}）` : '还没有')
+      + (s.view2 ? `\n第二个角度：认出 ${s.view2.markers} 个码；暗处发亮 第一个 ${(100 * s.view2.glare.first).toFixed(1)}%、第二个 ${(100 * s.view2.glare.second).toFixed(1)}%、合成后 ${(100 * s.view2.glare.merged).toFixed(2)}%` : '') + (s.look && s.moved ? '\n⚠ ' + s.moved : '');
+    const busy = !!s.busy, p = s.progress;
+    for (const id of ['wr-plan', 'wr-calib', 'wr-view']) $(id).disabled = busy || !s.ready;
+    $('wr-find').disabled = busy || !s.can_find; $('wr-park').disabled = busy || !s.can_find; $('wr-top').hidden = !s.top.pending; $('wr-top').disabled = busy;
+    $('wr-shot').disabled = busy || !s.ready || !s.look || !!s.moved; $('wr-again').disabled = busy || !s.ready || !s.look; $('wr-second').disabled = busy || !s.ready || !s.look || !!s.moved;
+    if (document.activeElement !== $('wr-merge')) $('wr-merge').checked = s.merge; $('wr-merge').disabled = !s.view2;
+    if (document.activeElement !== $('wr-use')) $('wr-use').checked = s.use;
+    $('wr-hint').textContent = busy ? '正在：' + s.busy + (p && p.n ? `（${p.i} / ${p.n}）` : '')
+      : !s.can_find ? '先到“点按”页连接机械臂（勾“有人能断电”再点“连接”）。'
+      : !s.ready ? '平板全屏显示标定页，等顶部相机认出平板（它只负责粗定位）；顶部相机挪过或没标定就点 ⓪。'
+      : !s.calibrated ? '平板放稳、显示标定页，点 ②。之后再到“点按”页做“一键校准精度”，回来点 ③。'
+      : s.moved ? s.moved + '：平板显示标定页，点 ③。'
+      : s.use ? '指令现在用腕部相机看屏幕。' : '可以勾选“指令用腕部相机看屏幕”。';
+    const r = s.results || {}, lines = [];
+    if (r.find) lines.push(`腕部相机找平板（${r.find.at}）：${r.find.markers} 个码，屏幕中心在底座前 ${r.find.centre_cm[0]} cm、左 ${r.find.centre_cm[1]} cm、高 ${r.find.centre_cm[2]} cm，倾斜 ${Math.round(r.find.slant_deg)}°`);
+    if (r.top) lines.push(`顶部相机（${r.top.at}）：` + (r.top.adopted ? '位置已按腕部标定更新' : `按腕部标定算出的位置和现在用的差 ${px(r.top.shift_mm)} mm / ${px(r.top.turn_deg)}°，还没有改用`));
+    if (r.plan) lines.push(`试算：看屏位 ${r.plan.look}\n标定位姿 ${r.plan.views} 个，笔尖最低离屏 ${r.plan.lowest_tip_mm} mm，关节离停靠位最多 ${r.plan.reach_deg}°`);
+    if (r.calibration) { const c = r.calibration; lines.push(`手眼标定（${c.at}）：${c.views} 个位姿，拟合残差 ${px(c.rms_px)} px，没参加拟合的 ${px(c.held_out_px)} px，去掉 ${c.left_out} 个；`
+      + `相机位置不确定度约 ${px(c.position_sigma_mm)} mm / ${Number(c.angle_sigma_deg).toFixed(2)}°；离支架图纸 ${px(c.off_drawing_mm)} mm / ${px(c.off_drawing_deg)}°；`
+      + `屏幕尺寸 ${px(c.screen_size_mm[0])} × ${px(c.screen_size_mm[1])} mm`); }
+    $('wr-result').textContent = lines.join('\n\n') || '还没有';
+    for (const [kind, img, empty] of [['picture', 'wr-picture', 'wr-p-empty'], ['screen', 'wr-screen', 'wr-s-empty']]) {
+      const has = s.pictures.includes(kind); $(empty).style.display = has ? 'none' : 'flex';
+      if (has && (busy || !shown[kind])) { $(img).src = url('/api/wrist/' + kind + '.jpg?t=' + Date.now()); shown[kind] = !busy; } }
+  }
+  async function tick() { const open = !document.querySelector('[data-pane="wrist"]').hidden;
+    if (open) { try { render(await (await fetch(url('/api/wrist/state'))).json()); } catch (e) { $('wr-hint').textContent = '控制台断开，或者这个版本没有腕部相机的页面'; } }
+    setTimeout(tick, open ? 800 : 1500); }
+  tick();
 })();
 </script>
 </body>

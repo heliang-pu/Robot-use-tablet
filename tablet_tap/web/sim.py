@@ -16,8 +16,9 @@ SCREEN_PX = (2560, 1600)  # the simulated tablet's display
 SCREEN_M = (0.250, 0.160)
 
 
-def flat_screen(centre: tuple[float, float, float] = (0.27, 0.05, 0.003), tilt_deg: float = 0.0) -> ScreenMap:
-    """A 250 x 160 mm screen lying in front of the arm, its bottom edge toward the robot."""
+def flat_screen(centre: tuple[float, float, float] = (0.26, 0.05, 0.003), tilt_deg: float = 0.0) -> ScreenMap:
+    """A 250 x 160 mm screen lying in front of the arm, its bottom edge toward the robot: where the upright pen reaches
+    all of it, bezel included, within the firmware's limits (joint 5 at its 75 deg over the far edge)."""
     tilt = np.radians(tilt_deg)
     right = np.array([0.0, -1.0, 0.0])
     up_slope = np.array([np.cos(tilt), 0.0, np.sin(tilt)])

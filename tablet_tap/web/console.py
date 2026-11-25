@@ -49,17 +49,21 @@ from tablet_tap.calibration.live_screen import mean_pose
 from tablet_tap.calibration.tap_correction import TapCorrection
 from tablet_tap.core.motion import TapPlanner
 from tablet_tap.core.motion import joint_move
+from tablet_tap.core.view_pose import clear_share
 from tablet_tap.errors import CalibrationError
 from tablet_tap.errors import SetupError
 from tablet_tap.errors import Stopped
 from tablet_tap.errors import TabletTapError
 from tablet_tap.errors import Unreachable
+from tablet_tap.robot import piper
 from tablet_tap.robot.executor import run_segments
 from tablet_tap.robot.factory import ArmMode
 from tablet_tap.robot.factory import open_arm
 from tablet_tap.robot.tablet_robot import ArmPlace
 from tablet_tap.robot.tablet_robot import TabletRobot
+from tablet_tap.vision import find_tablet
 from tablet_tap.vision import layout as screen_layout
+from tablet_tap.vision import outline
 from tablet_tap.vision.camera import open_camera
 from tablet_tap.vision.rectifier import ScreenRectifier
 from tablet_tap.vision.rectifier import detect_markers
@@ -94,10 +98,23 @@ TOUCH_JOBS = frozenset(["点击位置", "一键校准", "执行指令", "点按"
 STALE_M, STALE_DEG = 0.03, 4.0  # moved further than this, the learned taps no longer fit the arm's pose
 GRIP_OPEN_M, GRIP_TIME_S = 0.075, 1.5
 SLOW_GRID, FAST_GRID, TEST_TAPS = (3, 3), (5, 4), 12
-MAX_MISSES = 2  # taps in a row that the screen does not report end a calibration
-BEST_CENTRE_M = (0.245, 0.0)  # in front of the arm's base: there the pen reaches the whole screen upright
+MAX_MISSES = 3  # tries in a row that the screen does not report end a calibration (a missed point is tried twice)
+# Where the yellow frame asks for the tablet: straight ahead of the arm's base, on its slanted stand. There the pen
+# reaches the whole screen upright and the wrist camera can back off far enough to see all of it (nearer than 30 cm
+# it cannot; a tablet lying flat is better off at 24.5 cm, but then only the top camera sees it).
+BEST_CENTRE_M = (0.315, 0.0)
 PARK_LIFTS_M = (0.06, 0.04, 0.02)
-CAMERA_PERIOD_S = 0.2
+CAMERA_PERIOD_S = 0.1
+SPURIOUS_MS = 20.0
+READ_IN_FLIGHT_S = 0.4  # longer than one read of the camera
+MARKS_PERIOD_S = 0.4  # what is drawn on the page's picture is looked for this often; the picture itself is newer
+JPEG_QUALITY = 72
+# following the body's outline: looks needed to learn it, the share of it that has to be found, the furthest step
+OUTLINE_LOOKS, OUTLINE_SUPPORT, OUTLINE_REACH_M = 5, 0.7, 0.04
+ON_TABLE_PX = 8.0  # at 1920 px: a step within the tablet's plane that a slide on the table does not explain
+BODY_RIM_M = 0.009
+BESIDE_LOOKS = 25  # idle looks (0.4 s each) after which what has not moved is a thing, not a hand
+CROSSED_SHARE = 0.008  # of the strip of table around the tablet: more than this is a hand reaching in
 
 
 class LocalPage:
@@ -233,22 +250,31 @@ class Console:
         self._load_view()
         self._frame: np.ndarray | None = None
         self._frame_time = 0.0
+        self.recorder: Any = None  # web.recording, when the page has it
+        self.job_title = ""
+        self._marks: tuple[float, list[Any], list[Any]] = (-MARKS_PERIOD_S, [], [])
         self._camera_error = ""
         self._seen: dict[str, Any] = {"markers": 0, "tags": 0, "drift": None}
-        self._jpeg_cache: dict[str, tuple[float, bytes]] = {}
+        self._jpeg_cache: dict[tuple[str, int], tuple[float, bytes]] = {}
         self.busy: str | None = None
         self.progress: dict[str, Any] | None = None
         self.results: dict[str, Any] = {}
         self.taps: collections.deque[dict[str, Any]] = collections.deque(maxlen=50)  # clicks: wanted and touched
         self.live = self._load_live()
+        if self.live is not None:  # the view file is older than where the tablet was last followed to
+            self._view_of(self.live)
         self.correction = self._load_correction()
         self._plane_looks: list[np.ndarray] = []
         self._last_look: np.ndarray | None = None  # the tablet's pose in the previous look
         self._tablet = {"seen": 0, "state": "none"}
         self._reach = ""
+        self._outline_looks: collections.deque[outline.Edges] = collections.deque(maxlen=30)
+        self._beside_looks: collections.deque[np.ndarray] = collections.deque(maxlen=BESIDE_LOOKS)
+        self._beside: np.ndarray | None = None  # things lying on the table by the tablet (``outline.crossed``)
         self._located = False  # the camera has seen the tablet lie still in this session
         self._off_looks = 0  # looks in a row that saw the tablet away from where a running job has it
         self.https_port = 0  # of the second, https, server (the browser's microphone needs it); 0: there is none
+        self.wrist: Any = None  # web.wrist_page.WristSession, once its routes are registered
         self.fault = ""
         self._log: collections.deque[dict[str, Any]] = collections.deque(maxlen=400)
         self._log_seq = 0
@@ -287,6 +313,10 @@ class Console:
             except queue.Empty:
                 continue
             try:
+                if name not in STAYS_PUT:
+                    self._leave_teaching()
+                if self.recorder is not None:
+                    self.recorder.before(name, self.job_title if name == "执行指令" else "")
                 job()
             except Stopped as exc:
                 self.say(f"■ 已停止：{exc}")
@@ -296,8 +326,14 @@ class Console:
                 logger.exception("job %s failed", name)
                 self.say(f"✗ {name} 出错：{type(exc).__name__}: {exc}")
             finally:
-                if self.teach is not None and name != "点动":
-                    self._renew_teach()  # touches a procedure used up must not be taken for teaching touches
+                try:
+                    if self.teach is not None and name != "点动":
+                        self._renew_teach()  # touches a procedure used up must not be taken for teaching touches
+                except Exception as exc:  # noqa: BLE001 - reads the arm: one that lost its power must not end this thread
+                    self.fault = f"{type(exc).__name__}: {exc}"
+                    self.say(f"⚠ 手臂读不到了（{exc}）。检查手臂电源和急停，恢复后点“断开”再“连接”。")
+                if self.recorder is not None:
+                    self.recorder.after(name)
                 with self.lock:
                     self.busy, self.progress = None, None
 
@@ -377,24 +413,30 @@ class Console:
         else:
             n, lean, seed = best
             if lean != live.tilt_deg and live.contacts:
-                self._forget("笔的倾角变了")  # the contacts were made with the pen leaning differently
-                live.tilt_deg = lean
-                return self._apply_live(save=save, lean_free=True)
+                # made with the pen leaning differently: a few tenths of a millimetre, not worth losing them
+                self.say(f"笔的倾角从 {live.tilt_deg:g}° 改成 {lean:g}°，修正值保留，精度可能略差")
             live.tilt_deg, setup.seed_q = lean, seed.tolist()
             setup.screen_map = dataclasses.replace(setup.screen_map, tilt_deg=lean)
             setup.records["live_screen"] = live.to_json()
             self._reach = "" if n == 0 else f"20 个检查点有 {n} 个够不到，平板往底座挪近一些"
             if not self._reach and lean > 5:
-                self._reach = f"笔要斜 {lean:g}° 才够得到，会打滑：平板往底座挪近（中心离底座 24–28 cm 最好）"
-        if setup.camera_model is not None and setup.camera_pose is not None:
-            inverse = np.linalg.inv(np.asarray(setup.camera_pose))
-            quad = setup.camera_model.project(live.corners() @ inverse[:3, :3].T + inverse[:3, 3])
-            to_norm = cv2.getPerspectiveTransform(quad.astype(np.float32), np.float32([[0, 0], [1, 0], [1, 1], [0, 1]]))
-            model = setup.camera_model
-            self.rectifier = ScreenRectifier(to_norm, live.size_m[0] / live.size_m[1], 1280,
-                                             image_size=(model.width, model.height))  # fmt: skip
+                self._reach = (
+                    f"笔要斜 {lean:g}° 才够得到，会打滑：平放时笔很难垂直，换成 12°–20° 的斜支架（低的一边朝机械臂）；"
+                    "不用腕部相机时也可以把平板挪近（中心离底座 24–28 cm）"
+                )
+        self._view_of(live)
         if save:
             self._save()
+
+    def _view_of(self, live: LiveScreen) -> None:
+        """The picture of the screen as it lies in ``live``: the same place the arm's map has."""
+        model, pose = self.setup.camera_model, self.setup.camera_pose
+        if model is None or pose is None:
+            return
+        inverse = np.linalg.inv(np.asarray(pose))
+        quad = model.project(live.corners() @ inverse[:3, :3].T + inverse[:3, 3])
+        to_norm = cv2.getPerspectiveTransform(quad.astype(np.float32), np.float32([[0, 0], [1, 0], [1, 1], [0, 1]]))
+        self.rectifier = ScreenRectifier(to_norm, live.size_m[0] / live.size_m[1], 1280, image_size=(model.width, model.height))
 
     def _hover_limits(self) -> Any:
         """Hovering higher while the plane is only an estimate."""
@@ -408,12 +450,16 @@ class Console:
         """Keep up with the tablet: adopt where the camera sees it once it lies still somewhere else."""
         setup, model = self.setup, self.setup.camera_model
         screen = self.page.screen()
-        if model is None or setup.camera_pose is None or screen is None or frame.shape[1::-1] != (model.width, model.height):
+        if model is None or setup.camera_pose is None or frame.shape[1::-1] != (model.width, model.height):
             return
-        if not screen["covers_display"]:
+        if screen is None and (self.live is None or setup.aspect is None):
             return
-        layout = self.page.layout()
-        markers = {k: v for k, v in found.items() if k in layout.markers or k in TAG_IDS}
+        layout = self.page.layout() if screen is not None else screen_layout.default_layout(setup.aspect)
+        # out of full screen the page's markers are not where the layout says: only tags and the outline count then
+        full = screen is not None and bool(screen["covers_display"])
+        if not full and self.live is None:
+            return
+        markers = {k: v for k, v in found.items() if (full and k in layout.markers) or k in TAG_IDS}
         on_page = [k for k in markers if k in layout.markers]
         self._tablet = {"seen": len(on_page), "state": "tracked", "tags": len(markers) - len(on_page)}
         cam = np.asarray(setup.camera_pose)
@@ -432,10 +478,16 @@ class Console:
             if self._other_plane(live, markers, on_page, layout, model, cam):
                 return
             seen = live.track(markers, layout, model, cam)
+            if seen is None and self.busy is None:  # a moving arm hides the outline: not while a job runs
+                seen = self._track_outline(frame, live, model, cam)
+                self._tablet["outline"] = seen is not None
             if seen is None:
                 self._tablet["state"] = "lost"
                 self._last_look = None
                 return
+        if len(on_page) < MIN_PLACE_MARKERS or self._located:  # the stand slides on the table: its height stays
+            slid, left_over = find_tablet.on_table(live.pose, seen, live.size_m, model, cam)
+            seen = slid if left_over <= ON_TABLE_PX * model.width / 1920 else seen
         self._watch_job(live, seen)
         previous, self._last_look = self._last_look, seen
         if previous is None:
@@ -449,15 +501,127 @@ class Console:
         with self.lock:  # never under a running job: it has planned on the map it started with
             if self.busy is None and len(on_page) >= MIN_PLACE_MARKERS and self._located and self.rectifier is not None:
                 live.learn_tags(markers, self.rectifier.homography)
+                self._learn_outline(frame, live, seen, model, cam)
             if self.busy is None and (not self._located or distance > FOLLOW_M or turn > FOLLOW_DEG):
                 if self._located and (distance > STALE_M or turn > STALE_DEG):
-                    self._forget("平板挪动较大", contacts=False)
+                    self.say("平板挪得比较远：修正值保留着，精度可能差到 1–2 mm；要更准再点“一键校准精度”")
                 if self.correction is None:
                     self.correction = TapCorrection(live.size_m)
                 live.pose, self.live, setup.aspect = seen, live, layout.aspect
                 self._apply_live(lean_free=True)
                 self._located = True  # only now do the map and the picture belong to the tablet as it lies
+                if distance > MOVED_STOP_M or turn > MOVED_STOP_DEG:
+                    self._beside_looks.clear()
                 self.say(f"平板在新位置（移动 {distance * 1e3:.0f} mm、转 {turn:.1f}°），已跟上" + (f"；{self._reach}" if self._reach else ""))
+
+    def _learn_outline(self, frame: np.ndarray, live: LiveScreen, seen: np.ndarray, model: Any, cam: np.ndarray) -> None:
+        """Remember where the body's edges are in the tablet's own frame, while the page's markers say where that is."""
+        edges = outline.measure(frame, model, cam, seen, live.size_m)
+        if edges is None or edges.support < OUTLINE_SUPPORT:
+            return
+        self._outline_looks.append(edges)
+        if len(self._outline_looks) < OUTLINE_LOOKS:
+            return
+        values: dict[str, Any] = {}
+        for field in dataclasses.fields(outline.Edges):
+            known = [v for e in self._outline_looks if (v := getattr(e, field.name)) is not None]
+            values[field.name] = float(np.median(known)) if 2 * len(known) >= len(self._outline_looks) else None
+        self.setup.records["outline"] = values
+
+    def _track_outline(self, frame: np.ndarray, live: LiveScreen, model: Any, cam: np.ndarray) -> np.ndarray | None:
+        """Where the body's rim puts the tablet, when no markers tell: near where it was, or else anywhere on the
+        table. None when the rim was never learned or is not found."""
+        data = self.setup.records.get("outline")
+        if data is None:
+            return None
+        learned = outline.Edges.from_json(data)
+
+        def refine(guess: np.ndarray) -> np.ndarray | None:
+            now = None
+            for _ in range(3):
+                now = outline.measure(frame, model, cam, guess, live.size_m)
+                step = None if now is None or now.support < OUTLINE_SUPPORT else outline.moved(learned, now)
+                if step is None or float(np.linalg.norm(step[:2, 3])) > OUTLINE_REACH_M:
+                    return None
+                guess, left_over = find_tablet.on_table(live.pose, guess @ step, live.size_m, model, cam)
+                if left_over > ON_TABLE_PX * model.width / 1920:
+                    return None
+            if None not in (now.left, now.right):
+                # How far out a side's rim shows depends on where the tablet lies (the body is 7 mm thick). Both sides
+                # together give the middle; each is kept as it shows here, so that one of them alone says the same.
+                if learned.left is None or learned.right is None:
+                    width = now.right - now.left
+                    full = dataclasses.replace(learned, left=learned.right - width) if learned.left is None else dataclasses.replace(learned, right=learned.left + width)
+                else:
+                    wider = 0.5 * 0.3 * ((now.right - now.left) - (learned.right - learned.left))
+                    full = dataclasses.replace(learned, left=learned.left - wider, right=learned.right + wider)
+                self.setup.records["outline"] = full.to_json()
+            return guess
+
+        seen = refine(live.pose)
+        if seen is None:
+            side = -learned.left if learned.left is not None else BODY_RIM_M
+            right = learned.right if learned.right is not None else live.size_m[0] + BODY_RIM_M
+            body = (-side, learned.top, right, live.size_m[1] - learned.top)
+            guess = find_tablet.find(frame, model, cam, live.pose, live.size_m, body)
+            seen = None if guess is None else refine(guess)
+        return seen
+
+    def locate_now(self, timeout_s: float = 15.0) -> bool:
+        """For a running job, with the arm out of the picture: see where the tablet lies and take that over. True when
+        it has moved. Nothing is touched while the tablet is not seen, is being moved, or something (a hand) reaches
+        over the table beside it: that is waited for, and after ``timeout_s`` the job ends."""
+        live, setup, model = self.live, self.setup, self.setup.camera_model
+        if live is None or model is None or setup.camera_pose is None or setup.records.get("outline") is None:
+            return False
+        cam, before, told = np.asarray(setup.camera_pose), None, ""
+        deadline = time.monotonic() + timeout_s
+        while not self.stop.is_set():
+            frame = self.fresh_frame()
+            seen = self._track_outline(frame, live, model, cam)
+            if seen is None:
+                why = "看不到平板（被手或别的东西挡住、或挪出了画面）"
+            elif self._reaches_in(outline.crossed(frame, model, cam, seen, live.size_m)):
+                why = "平板旁边有手或新东西"
+            else:
+                why = "平板在动"
+                distance, turn = live.moved(seen)
+                if before is None and distance <= FOLLOW_M and turn <= FOLLOW_DEG:
+                    return False
+                if before is not None:
+                    apart, twist = LiveScreen(seen, live.size_m).moved(before)
+                    if apart <= STEADY_M and twist <= STEADY_DEG:
+                        if distance <= FOLLOW_M and turn <= FOLLOW_DEG:
+                            return False
+                        with self.lock:
+                            live.pose = seen
+                            self._apply_live(lean_free=True)
+                            self._located = True
+                        self.say(f"平板挪了 {distance * 1e3:.0f} mm、转了 {turn:.1f}°，已跟上，接着做" + (f"；{self._reach}" if self._reach.startswith(("够", "20")) else ""))
+                        return True
+            clear = why == "平板在动"
+            if not clear and why not in told:
+                told += why
+                self.say(f"{why}，手臂先不动，等 {timeout_s:.0f} 秒")
+            before = seen if clear else None
+            if time.monotonic() > deadline:
+                raise SetupError(f"{why}，已停下，没有点。手拿开、平板放稳后再执行")
+            time.sleep(0.15 if self.realtime else 0.0)
+        return False
+
+    def _reaches_in(self, strip: tuple[np.ndarray, int]) -> bool:
+        mask, size = strip
+        return float(outline.besides(mask, self._beside).sum()) > CROSSED_SHARE * max(size, 1)
+
+    def _tablet_still(self, wait_s: float = 2.5) -> bool:
+        """Whether the camera has the tablet lying still, given a moment: right after the arm has passed over it, hiding
+        other markers than before, two looks differ as if the tablet had been pushed."""
+        deadline = time.monotonic() + wait_s
+        while not self._located or self._tablet["state"] == "moving":
+            if time.monotonic() > deadline or self.stop.is_set():
+                return False
+            time.sleep(0.05)
+        return True
 
     def _watch_job(self, live: LiveScreen, seen: np.ndarray) -> None:
         """Stop a job that touches the screen when the tablet is no longer where the job has it."""
@@ -492,6 +656,8 @@ class Console:
             if len(self._plane_looks) >= PLANE_LOOKS and self.busy is None:
                 live.pose, self._plane_looks = mean_pose(self._plane_looks), []
                 live.tags = {}
+                self._outline_looks.clear()
+                self.setup.records.pop("outline", None)  # seen past a rim at another slant
                 self._forget("平板换了高度或倾角")
                 self.setup.aspect = layout.aspect
                 self._apply_live(lean_free=True)
@@ -508,6 +674,16 @@ class Console:
         except (TabletTapError, ValueError, np.linalg.LinAlgError) as exc:
             self._tablet = {"seen": 0, "state": "lost"}
             logger.warning("following the tablet: %s", exc)
+        live, model = self.live, self.setup.camera_model
+        if self._tablet.get("outline") and live is not None and model is not None and self.setup.camera_pose is not None:
+            mask, size = outline.crossed(frame, model, np.asarray(self.setup.camera_pose), live.pose, live.size_m)
+            self._tablet["beside"] = round(float(outline.besides(mask, self._beside).sum()) / max(size, 1), 4)
+            if self.busy is None and self._tablet["state"] == "tracked":  # what stays put for a while is a thing, not a hand
+                self._beside_looks.append(mask)
+                if len(self._beside_looks) == self._beside_looks.maxlen:
+                    self._beside = np.logical_and.reduce(self._beside_looks)
+            elif self.busy is not None:
+                self._beside_looks.clear()
         self._seen = {
             "markers": len(found),
             "tags": len(tags),
@@ -527,6 +703,35 @@ class Console:
         tags_path = self.view_path.with_suffix(".tags.json")
         if tags_path.exists():
             self.tag_reference = json.loads(tags_path.read_text())
+
+    def set_tap(self, time_ms: float | None = None, gap_mm: float | None = None) -> None:
+        """How long a tap stays down, and how high above the glass it waits before it goes down: from the next tap on."""
+        if time_ms is not None:
+            if not 0 <= time_ms <= 2000:
+                raise ValueError("点击时间应在 0–2000 毫秒之间")
+            self.setup.limits["dip_dwell_s"] = time_ms * 1e-3
+        if gap_mm is not None:
+            if not 1 <= gap_mm <= 6:
+                raise ValueError("悬空应在 1–6 mm 之间")
+            self.setup.limits["dip_m"] = gap_mm * 1e-3
+        self._save()
+        limits = self.setup.motion_limits()
+        self.say(f"点击设置已保存：按住 {limits.dip_dwell_s * 1e3:.0f} 毫秒，点前悬空 {limits.dip_m * 1e3:.1f} mm（下一次点击起生效）")
+
+    def contact_ms(self) -> float | None:
+        """How long the newest touch lasted that the calibration page saw begin and end; the few milliseconds by which a
+        contact sometimes breaks up are not a touch."""
+        ended = None
+        for touch in reversed(self.calib.touches_after(0)[0]):
+            if touch["t_ms"] is None:
+                continue
+            if touch["type"] in ("pointerup", "pointercancel"):
+                ended = float(touch["t_ms"])
+            elif touch["type"] == "pointerdown" and ended is not None:
+                if ended - float(touch["t_ms"]) >= SPURIOUS_MS:
+                    return round(ended - float(touch["t_ms"]))
+                ended = None
+        return None
 
     def apply_settings(self, tip_len_mm: float | None = None, press_mm: float | None = None) -> None:
         if tip_len_mm is not None:
@@ -599,6 +804,40 @@ class Console:
             self.arm.close()
             self.say("已断开机械臂（手臂保持使能，停在原处）")
         self.arm, self.arm_mode, self.teach = None, None, None
+
+    def _leave_teaching(self) -> None:
+        """Before anything that moves the arm: out of a teaching mode its button has ended, where it is."""
+        leave = getattr(self.arm, "leave_teaching", None) if self.arm is not None and self.moves else None
+        if leave is None or not leave():
+            return
+        time.sleep(0.3)  # a page that read the arm before must not be the last to report the fault
+        assert self.arm is not None
+        self.arm.read()
+        self.arm.sent, self.fault = None, ""
+        self._renew_teach()
+        self.say("手臂停在示教模式，已自动切回（臂停在原地），接着做")
+
+    def recover(self, channel: str) -> None:
+        """Clears an emergency stop, a collision, a teaching mode or joint errors and enables the arm where it is (the
+        page has asked for somebody to hold it). Nothing else is moved; the arm that was connected stays connected."""
+        if self.fake:
+            self.say("模拟手臂没有故障可恢复")
+            return
+        self._hardware_free("恢复机械臂")
+        self.say("故障恢复：只是没退出示教模式就直接切回来；切不回来或有别的故障才复位控制器（关节会短暂没力）。臂停在原地，不断电")
+        if self.arm is not None and self.moves:
+            wrong = self.arm.recover()
+            time.sleep(0.5)  # a page that read the arm before it came back must not be the last to say so
+            self.arm.read()
+            self.arm.sent = None
+        else:
+            self.disconnect()
+            wrong = piper.recover_unconnected(channel, self.setup.arm.firmware)
+        self.fault = ""
+        if self.arm is not None:
+            self._renew_teach()
+        self.say((f"已恢复（原来是：{wrong}）" if wrong else "手臂没有故障，什么都没发")
+                 + ("；先看笔夹还夹着没有，再点“复位”回停靠位" if self.arm is not None else "；现在可以点“连接”"))  # fmt: skip
 
     def _need_arm(self, moving: bool = True) -> LockedArm:
         if self.arm is None:
@@ -676,14 +915,14 @@ class Console:
         """The screen plane is the camera's estimate and has not been probed yet."""
         return self.setup.records.get("screen_map_source") == CAMERA_SOURCE
 
-    def _robot(self, limits: Any = None) -> TabletRobot:
+    def _robot(self, limits: Any = None, view_share: float | None = None) -> TabletRobot:
         arm = self._need_arm()
         setup = self.setup
         setup.require("screen_map", "park_q", "seed_q", hint="先记录停靠位姿、点几个触点并拟合。")
         try:
             return TabletRobot(arm, setup.pen_arm(), setup.screen_map, np.asarray(setup.park_q), np.asarray(setup.seed_q),
                                limits or setup.motion_limits(), should_stop=self.stop.is_set, realtime=self.realtime,
-                               aim=self._aim)  # fmt: skip
+                               aim=self._aim, view_share=view_share)  # fmt: skip
         except Unreachable as exc:
             raise Unreachable(
                 f"屏幕中心上方的悬停位姿机械臂够不到（{exc}）：把平板往拿笔的机械臂挪近、放低。"
@@ -694,6 +933,43 @@ class Console:
         if self.from_camera:
             raise SetupError("屏幕平面还只是相机估计的，可能差几毫米：先做一次“自动探触并重新拟合”，再点按。")
         return self._robot()
+
+    @property
+    def located(self) -> bool:
+        """Whether the camera has confirmed, since the console was started, where the tablet lies."""
+        return self._located
+
+    def view_share(self, robot: TabletRobot) -> float | None:
+        """How far back from the screen a run's arm has to go for the top camera to see the screen."""
+        setup = self.setup
+        if setup.camera_model is None or setup.camera_pose is None:
+            return None
+        screen = setup.screen_map
+        corners = np.array([screen.point(u, v) for u, v in ((0, 0), (1, 0), (1, 1), (0, 1))])
+        share = clear_share(robot.pen, robot.park_q, robot._high_q, setup.camera_model, setup.camera_pose, corners)  # noqa: SLF001
+        return share if share > 0 else None
+
+    def keep_up(self, device: RobotTabletDevice) -> None:
+        """Between two touches of a run: follow a tablet that was moved, with the robot and the picture of it."""
+        if self.locate_now():
+            device.robot.rescreen(self.setup.screen_map, np.asarray(self.setup.seed_q), self.view_share)
+            device.rectifier = self.rectifier
+
+    def run_robot(self) -> TabletRobot:
+        """``touching_robot`` for a whole instruction, with the arm at a known place: between two touches it backs off
+        only as far as the top camera's view of the screen asks."""
+        robot = self.touching_robot()
+        self._ready(robot)
+        if self.locate_now():
+            robot = self.touching_robot()
+        share = self.view_share(robot)
+        return robot if share is None else self._robot(view_share=share)
+
+    def _ready(self, robot: TabletRobot) -> None:
+        """Where a stop left the arm, it first goes back to the park pose."""
+        if robot.where is ArmPlace.UNKNOWN:
+            self.say("手臂不在停靠位，先低速回停靠位")
+            robot.recover()
 
     _touching_robot = touching_robot  # the name the run page was first told
 
@@ -733,6 +1009,27 @@ class Console:
                          should_stop=self.stop.is_set, realtime=self.realtime)  # fmt: skip
         self.say("已到停靠位姿")
 
+    def turn_park(self, j1_rad: float) -> None:
+        """The park pose with joint 1 turned: the folded arm swings aside, out of the top camera's view of the tablet.
+        The other joints stay as they are; the way is not checked for obstacles, so it is slow."""
+        arm = self._need_arm()
+        self.setup.require("park_q", hint="先记录停靠位姿。")
+        park = np.asarray(self.setup.park_q, np.float64)
+        if float(np.max(np.abs(arm.read() - park))) > 0.06:
+            raise SetupError("手臂不在停靠位姿：先点“让开”。")
+        pen = self.setup.pen_arm()
+        if not pen.lower[0] <= j1_rad <= pen.upper[0]:
+            raise ValueError("1 号关节转不到那里")
+        goal = park.copy()
+        goal[0] = j1_rad
+        limits = dataclasses.replace(self.setup.motion_limits(), joint_move_speed=PARK_SPEED)
+        self.say(f"停靠位的 1 号关节从 {np.degrees(park[0]):.0f}° 转到 {np.degrees(j1_rad):.0f}°（其余关节不变，低速，途中没有碰撞检查）")
+        run_segments(arm, [joint_move("转停靠位", arm.read(), goal, limits, settle=True)], hz=limits.hz,
+                     should_stop=self.stop.is_set, realtime=self.realtime)  # fmt: skip
+        self.setup.park_q = goal.tolist()
+        self._save()
+        self.say("新的停靠位姿已记下")
+
     def _lift(self, arm: LockedArm, limits: Any) -> None:
         """Straight up before a joint-space move, when the pen may be low over the tablet."""
         pen, q = self.setup.pen_arm(), arm.read()
@@ -755,6 +1052,7 @@ class Console:
             robot = self._robot(self._hover_limits())
         else:
             robot = self.touching_robot()
+        self._ready(robot)
         device = RobotTabletDevice(robot, None, None, nav=self.setup.nav)
         if name == "hover":
             robot.to_hover()
@@ -802,15 +1100,14 @@ class Console:
         if not (0 <= u <= 1 and 0 <= v <= 1):
             raise ValueError("点在平板屏幕外面，没有动")
         self.setup.require("screen_map", hint="相机还没有认出平板。")
-        if self.setup.camera_pose is not None and (not self._located or self._tablet["state"] == "moving"):
+        if self.setup.camera_pose is not None and not self._tablet_still():
             raise SetupError("相机还没认出平板现在的位置（标定页全屏、别挡住、放稳），没有动")
         if self.live is None:
             self.live = LiveScreen.from_map(self.setup.screen_map)
         slow = self.from_camera
         depth_mm = (NEAR_DEPTH_MM if self.live.contacts else CAMERA_DEPTH_MM) if slow else self.setup.motion_limits().press_m * 1e3
         robot = self._robot(self._hover_limits())
-        if robot.where is ArmPlace.UNKNOWN:
-            raise SetupError("手臂不在让开的位置：先点“让开”。")
+        self._ready(robot)
         if not self._reachable(robot, [(u, v)], depth_mm * 1e-3):
             raise Unreachable("这个点够不到，没有动" + (f"（{self._reach}）" if self._reach else ""))
         seq, contact = self.page.last_down_seq(), None
@@ -909,7 +1206,7 @@ class Console:
     def calibrate_taps(self) -> None:
         """Everything to make taps exact, in one go: slow touches until the plane is known, a grid of taps to learn what is
         left of the error, then taps at other places to measure what remains. The measured points are not learned from."""
-        if self.setup.camera_pose is not None and (not self._located or self._tablet["state"] == "moving"):
+        if self.setup.camera_pose is not None and not self._tablet_still():
             raise SetupError("相机还没认出平板现在的位置（标定页全屏、别挡住、放稳），没有动")
         if self.live is None:
             self.setup.require("screen_map", hint="相机还没有认出平板。")
@@ -920,8 +1217,7 @@ class Console:
         if not self.live.affine:
             self._slow_touches()
         robot = self._robot()
-        if robot.where is ArmPlace.UNKNOWN:
-            raise SetupError("手臂不在让开的位置：先点“让开”。")
+        self._ready(robot)
         press = robot.limits.press_m
         grid = self._reachable(robot, procedures.grid_points(*FAST_GRID, 0.08), press)
         learned = self._tap_all(robot, grid, "学习误差")
@@ -949,34 +1245,43 @@ class Console:
 
     def _slow_touches(self) -> None:
         robot = self._robot(self._hover_limits())
-        if robot.where is ArmPlace.UNKNOWN:
-            raise SetupError("手臂不在让开的位置：先点“让开”。")
+        self._ready(robot)
         missed = 0
         points = [(0.5, 0.5), *[p for p in procedures.grid_points(*SLOW_GRID, 0.12) if abs(p[0] - 0.5) + abs(p[1] - 0.5) > 0.1]]
         for i, (u, v) in enumerate(points, 1):
             self.progress = {"job": "慢速找屏幕", "i": i, "n": len(points)}
-            depth = (NEAR_DEPTH_MM if self.live.contacts else CAMERA_DEPTH_MM) * 1e-3
-            robot = self._robot(self._hover_limits())
-            if not self._reachable(robot, [(u, v)], depth):
-                continue
-            seq, arm, blocked = self.page.last_down_seq(), self._need_arm(), []
+            touched = contact = None
+            for _attempt in (1, 2):  # a pen that the screen misses now and then gets a second try at the same place
+                depth = (NEAR_DEPTH_MM if self.live.contacts else CAMERA_DEPTH_MM) * 1e-3
+                robot = self._robot(self._hover_limits())
+                if not self._reachable(robot, [(u, v)], depth):
+                    break
+                seq, arm, blocked = self.page.last_down_seq(), self._need_arm(), []
 
-            def stop_here(seq=seq, arm=arm, blocked=blocked) -> bool:  # noqa: ANN001
-                if self.page.last_down_seq() > seq:
-                    return True
-                if arm.lag() > BLOCKED_RAD:
-                    blocked.append(True)
-                    return True
-                return False
+                def stop_here(seq=seq, arm=arm, blocked=blocked) -> bool:  # noqa: ANN001
+                    if self.page.last_down_seq() > seq:
+                        return True
+                    if arm.lag() > BLOCKED_RAD:
+                        blocked.append(True)
+                        return True
+                    return False
 
-            contact = robot.probe(u, v, stop_here, depth_m=depth)
-            touched = None if contact is None or blocked else self.page.wait_down(seq, 0.5)
-            if touched is None:
+                contact = robot.probe(u, v, stop_here, depth_m=depth)
+                touched = None if contact is None or blocked else self.page.wait_down(seq, 0.5)
+                if touched is not None:
+                    break
                 missed += 1
-                self.say(f"  慢速 ({u:.2f}, {v:.2f})：" + ("顶住了，" if blocked else "") + "屏幕没有报告触摸")
+                self.say(f"  慢速 ({u:.2f}, {v:.2f})：" + ("顶住了，" if blocked else f"降到估计面以下 {depth * 1e3:g} mm，") + "屏幕没有报告触摸")
                 if missed >= MAX_MISSES:
                     robot.to_park()
-                    raise CalibrationError("连续碰不到或不触发，已停止：检查笔的导电（笔杆接导线）和平板有没有动过。")
+                    if blocked or self.live.contacts:
+                        raise CalibrationError(f"连续 {missed} 次碰到了却不触发，已停止：检查笔的导电（笔杆接导线）和平板有没有动过。")
+                    raise CalibrationError(
+                        f"连续 {missed} 次降到估计面以下 {depth * 1e3:g} mm 都没有碰到，已停止。两种可能：屏幕比相机估计的低，或者笔不导电。"
+                        "办法：去掉“点完让开”，点一下屏幕中间，笔停在上方后用“下”键（先 5 mm、接近后 1 mm 一步）降到屏幕上出现圆点，"
+                        "控制台会记下这个高度，再点“一键校准精度”。笔已经压到屏幕还没有圆点，就是导电的问题。"
+                    )
+            if touched is None:
                 continue
             missed = 0
             self.live.add(touched, contact[:3, 3])
@@ -989,15 +1294,19 @@ class Console:
         done, missed = [], 0
         for i, (u, v) in enumerate(points, 1):
             self.progress = {"job": job, "i": i, "n": len(points)}
-            aimed, seq = self._aim(u, v), self.page.last_down_seq()
-            robot.tap(u, v)
-            touched = self.page.wait_down(seq, 0.5)
-            if touched is None:
+            touched = None
+            for _attempt in (1, 2):  # as in the slow touches: one miss is tried again
+                aimed, seq = self._aim(u, v), self.page.last_down_seq()
+                robot.tap(u, v)
+                touched = self.page.wait_down(seq, 0.5)
+                if touched is not None:
+                    break
                 missed += 1
                 self.say(f"  {job} ({u:.2f}, {v:.2f})：屏幕没有报告触摸")
                 if missed >= MAX_MISSES:
                     robot.to_park()
-                    raise CalibrationError("连续两次点了没有触发，已停止：检查笔的导电（笔杆接导线）。")
+                    raise CalibrationError(f"连续 {missed} 次点了没有触发，已停止：检查笔的导电（笔杆接导线）。")
+            if touched is None:
                 continue
             missed = 0
             error = robot.screen.error_mm((u, v), touched)
@@ -1064,6 +1373,7 @@ class Console:
 
     def taptest(self, nu: int, nv: int, margin: float, repeat: int) -> None:
         robot = self.touching_robot()
+        self._ready(robot)
         points = self._reachable(robot, procedures.grid_points(nu, nv, margin), robot.limits.press_m) * repeat
         if not points:
             raise CalibrationError("测试点机械臂一个都够不到；把平板往机械臂挪近再试。")
@@ -1102,7 +1412,7 @@ class Console:
     def close_camera(self) -> None:
         camera, self.camera = self.camera, None
         if camera is not None:
-            time.sleep(2 * CAMERA_PERIOD_S)  # the watcher's read in flight
+            time.sleep(READ_IN_FLIGHT_S)  # the watcher's read in flight
             camera.close()
             self.say("相机已释放")
         self._frame = None
@@ -1195,7 +1505,8 @@ class Console:
         frame, stamp = self._frame, self._frame_time
         if frame is None:
             return None
-        cached = self._jpeg_cache.get(kind)
+        key = (kind, width)
+        cached = self._jpeg_cache.get(key)
         if cached is not None and cached[0] == stamp:
             return cached[1]
         if kind == "screen":
@@ -1205,9 +1516,12 @@ class Console:
         else:
             image = frame.copy()
             thick = max(2, image.shape[1] // 600)
-            for corners in detect_markers(image).values():
+            if stamp - self._marks[0] >= MARKS_PERIOD_S or stamp < self._marks[0]:
+                self._marks = (stamp, list(detect_markers(image).values()), detect_table_tags(image))
+            _, markers, tags = self._marks
+            for corners in markers:
                 cv2.polylines(image, [corners.astype(np.int32)], True, (0, 220, 0), thick)
-            for tag in detect_table_tags(image):
+            for tag in tags:
                 cv2.polylines(image, [tag["corners"].astype(np.int32)], True, (255, 160, 0), thick)
                 cv2.putText(image, str(tag["id"]), tuple(tag["corners"][0].astype(int)), cv2.FONT_HERSHEY_SIMPLEX,
                             image.shape[1] / 1100, (0, 0, 255), thick)  # fmt: skip
@@ -1221,10 +1535,10 @@ class Console:
         scale = width / image.shape[1]
         if scale < 1:
             image = cv2.resize(image, (width, round(image.shape[0] * scale)), interpolation=cv2.INTER_AREA)
-        ok, data = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        ok, data = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
         if not ok:
             return None
-        self._jpeg_cache[kind] = (stamp, data.tobytes())
+        self._jpeg_cache[key] = (stamp, data.tobytes())
         return data.tobytes()
 
     # ---- what the page shows -----------------------------------------------------------------------------------------
@@ -1273,12 +1587,16 @@ class Console:
             "progress": self.progress,
             "stopping": self.stop.is_set() and self.busy is not None,
             "fault": self.fault,
+            "contact_ms": self.contact_ms(),
+            "can_recover": True,  # the page shows its button; a console started before this was written does not say so
             "arm": arm,
             "place": place,
             "touches": [] if teach is None else [{"u": round(t.u, 4), "v": round(t.v, 4)} for t in teach.touches],
             "setup": {
                 "tip_len_mm": round(setup.arm.tip_len * 1e3, 1),
                 "press_mm": round(setup.motion_limits().press_m * 1e3, 2),
+                "tap_ms": round(setup.motion_limits().dip_dwell_s * 1e3),
+                "tap_gap_mm": round(setup.motion_limits().dip_m * 1e3, 1),
                 "park_set": setup.park_q is not None,
                 "screen_map": screen_map,
                 "camera": setup.camera,
@@ -1307,16 +1625,19 @@ class Console:
     def close(self) -> None:
         self._closing.set()
         self.stop.set()
+        if self.recorder is not None:
+            self.recorder.close()
         if self.camera is not None:
             self.camera.close()
 
 
 # ---- HTTP ----------------------------------------------------------------------------------------------------------
-JOB_NAMES = {"connect": "连接", "disconnect": "断开", "key": "点动", "fit": "拟合", "park": "回停靠位", "hover": "到屏幕上方",
+STAYS_PUT = {"断开", "故障恢复", "拟合", "打开相机", "释放相机", "相机标定", "相机估计屏幕位置", "清空修正", "保存参数"}  # jobs without the arm
+JOB_NAMES = {"connect": "连接", "disconnect": "断开", "key": "点动", "fit": "拟合", "park": "回停靠位", "recover": "故障恢复", "hover": "到屏幕上方",
              "tap": "点按", "swipe": "滑动", "home": "回桌面", "back": "返回", "probe": "自动探触", "taptest": "点按测试",
              "camera_open": "打开相机", "camera_close": "释放相机", "view": "相机标定", "place": "相机估计屏幕位置", "point": "点击位置",
              "forget_contacts": "清空修正", "start": "连接",
-             "grip": "夹爪", "calibrate_taps": "一键校准", "set": "保存参数"}  # fmt: skip
+             "grip": "夹爪", "park_turn": "转停靠位", "calibrate_taps": "一键校准", "set": "保存参数", "set_tap": "保存参数"}  # fmt: skip
 
 
 def _job(console: Console, cmd: str, args: dict[str, Any]) -> Callable[[], None]:
@@ -1348,6 +1669,13 @@ def _job(console: Console, cmd: str, args: dict[str, Any]) -> Callable[[], None]
         return console.fit
     if cmd == "park":
         return console.park
+    if cmd == "recover":
+        channel = str(args.get("channel", "can_l_follower"))
+        if not console.fake and channel not in ("can_l_follower", "can_r_follower"):
+            raise ValueError("请选择拿笔的机械臂（左从臂或右从臂）")
+        if not console.fake and not args.get("attended"):
+            raise ValueError("恢复时关节会短暂没力：扶住手臂，先勾选“有人能断电”")
+        return lambda: console.recover(channel)
     if cmd in ("hover", "tap", "swipe", "home", "back"):
         return lambda: console.gesture(cmd, args)
     if cmd == "probe":
@@ -1374,6 +1702,11 @@ def _job(console: Console, cmd: str, args: dict[str, Any]) -> Callable[[], None]
         return lambda: console.point((x, y), on_camera, park)
     if cmd == "grip":
         return lambda: console.grip(bool(args.get("close", True)))
+    if cmd == "park_turn":
+        turn = np.radians(number("j1_deg", 40.0, -90.0, 90.0))
+        if not console.fake and not args.get("attended"):
+            raise ValueError("手臂会转动：先勾选“有人能断电”")
+        return lambda: console.turn_park(float(turn))
     if cmd == "calibrate_taps":
         return console.calibrate_taps
     if cmd == "forget_contacts":
@@ -1389,6 +1722,10 @@ def _job(console: Console, cmd: str, args: dict[str, Any]) -> Callable[[], None]
         width, height = number("width_mm", 236.9, 50, 500), number("height_mm", 148.1, 30, 400)
         tilt = number("tilt_deg", 15.0, 0, 25)
         return lambda: console.place(width, height, tilt)
+    if cmd == "set_tap":
+        time_ms = None if args.get("time_ms") in (None, "") else number("time_ms", 0, 0, 2000)
+        gap_mm = None if args.get("gap_mm") in (None, "") else number("gap_mm", 0, 1, 6)
+        return lambda: console.set_tap(time_ms, gap_mm)
     if cmd == "set":
         tip = None if args.get("tip_len_mm") in (None, "") else float(args["tip_len_mm"])
         press = None if args.get("press_mm") in (None, "") else float(args["press_mm"])
@@ -1472,6 +1809,18 @@ def create_app(console: Console, token: str = "") -> flask.Flask:
         from tablet_tap.web import run_page  # noqa: PLC0415
 
         run_page.register(app, console, token)
+    try:  # so are the videos
+        from tablet_tap.web import recording  # noqa: PLC0415
+
+        recording.register(app, console, token)
+    except Exception:  # noqa: BLE001
+        logger.exception("录像没有加载，其它不受影响")
+    try:  # the wrist camera is an addition: the console must come up without it
+        from tablet_tap.web import wrist_page  # noqa: PLC0415
+
+        wrist_page.register(app, console, token)
+    except Exception:  # noqa: BLE001
+        logger.exception("腕部相机的页面没有加载，其它不受影响")
     return app
 
 

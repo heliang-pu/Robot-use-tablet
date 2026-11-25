@@ -1,0 +1,317 @@
+{
+ "what": "两只从臂控制器（固件）里保存的设置的存档，供以后恢复。全部是只读查询读到的，读的时候手臂没有动。",
+ "original_means": "这个项目第一次读到、还没有改动时的值。左臂的关节限位和最大速度读于 2026-11-23 05:24:31（改 5 号上限之前，原始记录 runs/firmware_joint_limits_left_before_20261123.json）；其余各项和右臂读于 2026-11-23 09:47，这个项目没有写过它们。更早有没有人改过，从手臂上看不出来。",
+ "units": {
+  "joint_limits_deg": "度，[最小, 最大]，手臂自己的读数",
+  "joint_max_speed_rad_s": "rad/s",
+  "joint_max_acc_rad_s2": "rad/s²",
+  "flange_vel_acc_limits": "末端：线速度 m/s、角速度 rad/s、线加速度 m/s²、角加速度 rad/s²",
+  "crash_protection_rating": "1…6 号关节，0 = 不检测碰撞，1–8 越大越灵敏",
+  "joint_assistance_rating": "1…6 号关节，0–10"
+ },
+ "how_to_restore": [
+  "到现在为止只改过一项：左臂 5 号关节的上限。恢复：bin/py -m tablet_tap limits --restore（要求没有别的程序在用手臂、网页控制台没连着手臂；规划用的限位会跟着改回去）。",
+  "以后别的项被改了，按 original 里的值用 pyAgxArm 写回（角度用 rad）：set_joint_angle_vel_limits(关节, min_angle_limit=, max_angle_limit=, max_joint_spd=)、set_joint_acc_limits(关节, max_joint_acc=)、set_flange_vel_acc_limits(max_linear_vel=, max_angular_vel=, max_linear_acc=, max_angular_acc=)、set_crash_protection_rating(关节, rating=)、set_joint_assistance_rating(关节, rating=)。写完用 bin/py -m tablet_tap limits 读一遍核对。",
+  "固件自带的“恢复默认值”（set_joint_angle_vel_acc_limits_to_default、set_flange_vel_acc_limits_to_default）写回的是固件的默认值，没有核对过它和这里的 original 是否相同。"
+ ],
+ "not_saved": "电机驱动器内部的参数（pyAgxArm 的 get_cpv_*）没有读：读它们要切换手臂的运动模式。",
+ "arms": {
+  "can_l_follower": {
+   "name": "左臂（拿笔的）",
+   "firmware": {
+    "hardware_version": "H-V1.2-1",
+    "motor_ratio_and_batch": "10",
+    "node_type": "ARM_MC",
+    "software_version": "S-V1.8-8",
+    "production_date": "260606",
+    "node_number": "15"
+   },
+   "original": {
+    "joint_limits_deg": {
+     "1": [
+      -150.0,
+      150.0
+     ],
+     "2": [
+      0.0,
+      180.0
+     ],
+     "3": [
+      -170.0,
+      0.0
+     ],
+     "4": [
+      -100.0,
+      100.0
+     ],
+     "5": [
+      -70.0,
+      70.0
+     ],
+     "6": [
+      -180.0,
+      180.0
+     ]
+    },
+    "joint_max_speed_rad_s": {
+     "1": 3.0,
+     "2": 3.0,
+     "3": 3.0,
+     "4": 3.0,
+     "5": 3.0,
+     "6": 3.0
+    },
+    "joint_max_acc_rad_s2": {
+     "1": 5.0,
+     "2": 5.0,
+     "3": 5.0,
+     "4": 5.0,
+     "5": 5.0,
+     "6": 5.0
+    },
+    "flange_vel_acc_limits": {
+     "end_max_linear_vel": 1.0,
+     "end_max_angular_vel": 0.25,
+     "end_max_linear_acc": 1.5,
+     "end_max_angular_acc": 0.3
+    },
+    "crash_protection_rating": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "joint_assistance_rating": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ]
+   },
+   "now": {
+    "read_at": "2026-11-23 09:47:23",
+    "joint_limits_deg": {
+     "1": [
+      -150.0,
+      150.0
+     ],
+     "2": [
+      0.0,
+      180.0
+     ],
+     "3": [
+      -170.0,
+      0.0
+     ],
+     "4": [
+      -100.0,
+      100.0
+     ],
+     "5": [
+      -70.0,
+      75.0
+     ],
+     "6": [
+      -180.0,
+      180.0
+     ]
+    },
+    "joint_max_speed_rad_s": {
+     "1": 3.0,
+     "2": 3.0,
+     "3": 3.0,
+     "4": 3.0,
+     "5": 3.0,
+     "6": 3.0
+    },
+    "joint_max_acc_rad_s2": {
+     "1": 5.0,
+     "2": 5.0,
+     "3": 5.0,
+     "4": 5.0,
+     "5": 5.0,
+     "6": 5.0
+    },
+    "flange_vel_acc_limits": {
+     "end_max_linear_vel": 1.0,
+     "end_max_angular_vel": 0.25,
+     "end_max_linear_acc": 1.5,
+     "end_max_angular_acc": 0.3
+    },
+    "crash_protection_rating": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "joint_assistance_rating": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ]
+   },
+   "changes": [
+    {
+     "when": "2026-11-23 05:24",
+     "what": "5 号关节上限 70° → 75°（下限 −70° 没动）",
+     "why": "笔垂直屏幕时要够到屏幕远端",
+     "restore": "bin/py -m tablet_tap limits --restore"
+    }
+   ]
+  },
+  "can_r_follower": {
+   "name": "右臂",
+   "firmware": {
+    "hardware_version": "H-V1.2-1",
+    "motor_ratio_and_batch": "10",
+    "node_type": "ARM_MC",
+    "software_version": "S-V1.8-9",
+    "production_date": "260611",
+    "node_number": "15"
+   },
+   "original": {
+    "joint_limits_deg": {
+     "1": [
+      -150.0,
+      150.0
+     ],
+     "2": [
+      0.0,
+      180.0
+     ],
+     "3": [
+      -170.0,
+      0.0
+     ],
+     "4": [
+      -100.0,
+      100.0
+     ],
+     "5": [
+      -70.0,
+      70.0
+     ],
+     "6": [
+      -180.0,
+      180.0
+     ]
+    },
+    "joint_max_speed_rad_s": {
+     "1": 3.0,
+     "2": 3.0,
+     "3": 3.0,
+     "4": 3.0,
+     "5": 3.0,
+     "6": 3.0
+    },
+    "joint_max_acc_rad_s2": {
+     "1": 5.0,
+     "2": 5.0,
+     "3": 5.0,
+     "4": 5.0,
+     "5": 5.0,
+     "6": 5.0
+    },
+    "flange_vel_acc_limits": {
+     "end_max_linear_vel": 1.0,
+     "end_max_angular_vel": 0.25,
+     "end_max_linear_acc": 1.5,
+     "end_max_angular_acc": 0.3
+    },
+    "crash_protection_rating": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "joint_assistance_rating": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ]
+   },
+   "now": {
+    "read_at": "2026-11-23 09:47:26",
+    "joint_limits_deg": {
+     "1": [
+      -150.0,
+      150.0
+     ],
+     "2": [
+      0.0,
+      180.0
+     ],
+     "3": [
+      -170.0,
+      0.0
+     ],
+     "4": [
+      -100.0,
+      100.0
+     ],
+     "5": [
+      -70.0,
+      70.0
+     ],
+     "6": [
+      -180.0,
+      180.0
+     ]
+    },
+    "joint_max_speed_rad_s": {
+     "1": 3.0,
+     "2": 3.0,
+     "3": 3.0,
+     "4": 3.0,
+     "5": 3.0,
+     "6": 3.0
+    },
+    "joint_max_acc_rad_s2": {
+     "1": 5.0,
+     "2": 5.0,
+     "3": 5.0,
+     "4": 5.0,
+     "5": 5.0,
+     "6": 5.0
+    },
+    "flange_vel_acc_limits": {
+     "end_max_linear_vel": 1.0,
+     "end_max_angular_vel": 0.25,
+     "end_max_linear_acc": 1.5,
+     "end_max_angular_acc": 0.3
+    },
+    "crash_protection_rating": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "joint_assistance_rating": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ]
+   },
+   "changes": []
+  }
+ }
+}

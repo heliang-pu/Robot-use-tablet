@@ -10,9 +10,13 @@ from __future__ import annotations
 from collections.abc import Callable
 import dataclasses
 import datetime
+import functools
 import json
+import os
 import pathlib
 import re
+import signal
+import subprocess
 import threading
 import time
 from typing import Any
@@ -23,6 +27,7 @@ import numpy as np
 import requests
 
 from tablet_tap import config
+from tablet_tap.agent import by_steps
 from tablet_tap.agent import gui_agent
 from tablet_tap.agent.robot_device import RobotTabletDevice
 from tablet_tap.core.keyboard import ANCHORS
@@ -85,7 +90,7 @@ class ServiceProbe:
             answer = self._get(f"{self.options.vlm_url.rstrip('/')}/models")
             names = [str(m.get("id")) for m in answer.json().get("data", [])]
         except (requests.RequestException, ValueError, AttributeError):
-            return {"ok": False, "detail": "没有启动（bash scripts/serve_vlm.sh）"}
+            return {"ok": False, "detail": "没有启动（在“指令”页点“启动模型”，或 bash scripts/serve_vlm.sh）"}
         if self.options.model not in names:
             return {"ok": False, "detail": f"服务在，但没有叫 {self.options.model} 的模型（有：{names}）"}
         return {"ok": True, "detail": self.options.model}
@@ -100,6 +105,118 @@ class ServiceProbe:
             if answer.status_code == 200
             else {"ok": False, "detail": "正在加载模型"}
         )
+
+
+class ModelServer:
+    """The model server as the page starts and stops it: ``scripts/serve_vlm.sh`` in a process group of its own, what
+    it prints in ``runs/vlm.log``. It takes about half of the graphics card, which the bench's other programs share: it
+    is started only when the operator asks for it, and the script itself refuses when the card has too little free."""
+
+    MODELS = {"8b": "weights/GUI-Owl-1.5-8B-Instruct", "2b": "weights/GUI-Owl-1.5-2B-Instruct"}
+
+    def __init__(self, options: RunOptions, script: pathlib.Path | None = None) -> None:
+        self.options = options
+        self.script = script or pathlib.Path(__file__).resolve().parents[2] / "scripts" / "serve_vlm.sh"
+        self._gpu: tuple[float, dict[str, int] | None] = (-1e9, None)
+        self._lock = threading.Lock()
+
+    @property
+    def port(self) -> int:
+        match = re.search(r":(\d+)(?:/|$)", self.options.vlm_url)
+        return int(match.group(1)) if match else 8802
+
+    @property
+    def log_path(self) -> pathlib.Path:
+        return config.runs_dir() / "vlm.log"
+
+    @property
+    def pid_path(self) -> pathlib.Path:
+        return config.runs_dir() / f"vlm_{self.port}.pid"
+
+    def pid(self) -> int | None:
+        """The server this page started, while it is alive (also after the console itself was started again)."""
+        try:
+            pid = int(self.pid_path.read_text().strip())
+            command = pathlib.Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
+            state = pathlib.Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+        except (OSError, ValueError, IndexError):
+            return None
+        return pid if state != "Z" and ("vllm" in command or self.script.name in command) else None
+
+    def gpu(self) -> dict[str, int] | None:
+        """Used, free and total memory of the graphics card (MiB); None when it cannot be asked."""
+        with self._lock:
+            if time.monotonic() - self._gpu[0] < 4.0:
+                return self._gpu[1]
+        try:
+            out = subprocess.run(["nvidia-smi", "--query-gpu=memory.used,memory.free,memory.total", "--format=csv,noheader,nounits"],
+                                 capture_output=True, text=True, timeout=3, check=True).stdout.splitlines()[0]  # fmt: skip
+            used, free, total = (int(x) for x in out.split(","))
+            value: dict[str, int] | None = {"used_mib": used, "free_mib": free, "total_mib": total}
+        except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+            value = None
+        with self._lock:
+            self._gpu = (time.monotonic(), value)
+        return value
+
+    def tail(self, lines: int = 3) -> list[str]:
+        try:
+            text = self.log_path.read_bytes()[-4000:].decode(errors="replace")
+        except OSError:
+            return []
+        return [line[:300] for line in text.splitlines() if line.strip()][-lines:]
+
+    def start(self, model: str = "8b") -> int:
+        if model not in self.MODELS:
+            raise ValueError(f"模型应是 {sorted(self.MODELS)} 之一")
+        if self.pid() is not None:
+            raise BusyError("模型服务已经在启动或运行")
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        command = ["bash", str(self.script), "--model", self.MODELS[model], "--port", str(self.port), "--name", self.options.model]
+        with self.log_path.open("ab") as log:
+            log.write(f"---- {datetime.datetime.now():%F %T} 网页启动：{' '.join(command[1:])} ----\n".encode())
+            log.flush()
+            process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                                       start_new_session=True, cwd=self.script.parent.parent)  # fmt: skip
+        self.pid_path.write_text(str(process.pid))
+        try:
+            code = process.wait(timeout=4.0)  # the script's own checks (free memory, the port, the weights) end it at once
+        except subprocess.TimeoutExpired:
+            return process.pid
+        self.pid_path.unlink(missing_ok=True)
+        raise SetupError(f"模型服务没有起来（退出码 {code}）：" + " / ".join(self.tail(4)))
+
+    def stop(self) -> bool:
+        """End the server and everything it started; False when there was none."""
+        pid = self.pid()
+        if pid is None:
+            self.pid_path.unlink(missing_ok=True)
+            return False
+        for sig, wait_s in ((signal.SIGTERM, 20.0), (signal.SIGKILL, 5.0)):
+            try:
+                os.killpg(pid, sig)
+            except ProcessLookupError:
+                break
+            except PermissionError:
+                raise SetupError(f"停不掉模型服务（进程 {pid} 不是这个用户的）") from None
+            deadline = time.monotonic() + wait_s
+            while self.pid() is not None and time.monotonic() < deadline:
+                try:
+                    os.waitpid(pid, os.WNOHANG)  # ours when this console started it: let it go
+                except (ChildProcessError, OSError):
+                    pass
+                time.sleep(0.2)
+            if self.pid() is None:
+                break
+        self.pid_path.unlink(missing_ok=True)
+        with self._lock:
+            self._gpu = (-1e9, None)
+        return True
+
+    def status(self, serving: bool) -> dict[str, Any]:
+        pid = self.pid()
+        return {"pid": pid, "starting": pid is not None and not serving, "serving": serving, "ours": pid is not None,
+                "gpu": self.gpu(), "log": self.tail(2) if pid is not None and not serving else []}  # fmt: skip
 
 
 class ConsoleCamera:
@@ -181,6 +298,7 @@ class RunSession:
     ) -> None:
         self.console, self.options, self.llm_factory = console, options or RunOptions(), llm_factory
         self.probe = probe or ServiceProbe(self.options)
+        self.model_server = ModelServer(self.options)
         self.current: Run | None = None
         self._lock = threading.Lock()
         self._mic: tuple[threading.Thread, threading.Event, dict[str, Any]] | None = None
@@ -194,10 +312,16 @@ class RunSession:
             wants.append("机械臂没有连接（在标定控制台里以“可运动”连接）")
         elif not con.moves:
             wants.append("机械臂是只读连接，不能运动（重新以“可运动”连接）")
-        if con.camera is None:
-            wants.append("相机没有打开")
-        if con.rectifier is None:
-            wants.append("相机还没有对屏幕标定（标定控制台里的“相机标定”）")
+        wrist = getattr(con, "wrist", None)
+        if wrist is not None and wrist.use:  # the wrist camera shows the screen; the top camera only places the tablet
+            wants += [f"腕部相机：{want}" for want in wrist.missing()]
+        else:
+            if con.camera is None:
+                wants.append("相机没有打开")
+            if con.rectifier is None:
+                wants.append("相机还没有对屏幕标定（标定控制台里的“相机标定”）")
+            elif con.camera is not None and not con.fake and con.live is not None and not con.located:
+                wants.append("相机还没确认平板的位置（等几秒）；平板被挪过或被挡住时，在平板上打开标定页并全屏几秒，再切回桌面")
         if con.setup.screen_map is None or con.setup.park_q is None:
             wants.append("屏幕平面或停靠位姿还没有标定")
         elif con.from_camera:
@@ -207,9 +331,10 @@ class RunSession:
         return wants
 
     def start(
-        self, instruction: str, max_steps: int = 15, settle_s: float = 0.8, add_info: str | None = None
+        self, instruction: str, max_steps: int = 15, settle_s: float | None = None, add_info: str | None = None
     ) -> Run:
-        """``add_info``: the note appended to the instruction; None is the usual one, "" none at all."""
+        """``settle_s``: the wait after each action; None: none with the top camera, where the arm's way out of the
+        picture is wait enough, 0.8 s with the wrist camera. ``add_info``: the note appended to the instruction; None is the usual one, "" none at all."""
         instruction = _tidy(instruction)
         if add_info is not None:
             add_info = _tidy(add_info)
@@ -221,11 +346,15 @@ class RunSession:
             raise ValueError(f"指令太长（{len(instruction)} 字，最多 {MAX_INSTRUCTION}）")
         if not 1 <= int(max_steps) <= 40:
             raise ValueError("最多步数应在 1–40 之间")
+        if settle_s is None:
+            wrist = getattr(self.console, "wrist", None)
+            settle_s = 0.8 if wrist is not None and wrist.use else 0.0
         if not 0.0 <= float(settle_s) <= 10.0:
             raise ValueError("每步等待应在 0–10 秒之间")
         wants = self.missing(None if self.llm_factory else self.probe.check())
         if wants:
             raise SetupError("还不能执行：" + "；".join(wants))
+        self.console.job_title = instruction
         run = Run(self._new_id(), instruction, time.time(), int(max_steps))
         if not self.console.submit(JOB_NAME, lambda: self._job(run, float(settle_s), add_info)):
             raise BusyError(f"正在执行“{self.console.busy}”，这条指令没有执行（不排队）")
@@ -243,12 +372,22 @@ class RunSession:
         raise RuntimeError("no free run directory")
 
     def _job(self, run: Run, settle_s: float, note: str | None = None) -> None:
-        con, robot = self.console, None
+        con, robot, done = self.console, None, None
         try:
-            robot = con.touching_robot()
             keyboard = con.setup.on_screen_keyboard()
-            device = RobotTabletDevice(robot, ConsoleCamera(con), con.rectifier, nav=con.setup.nav, keyboard=keyboard)
-            agent = gui_agent.GuiAgent(
+            wrist = getattr(con, "wrist", None)
+            if wrist is not None and wrist.use:
+                device, done = wrist.run_device(keyboard)  # at the look pose, the wrist camera open
+                robot = device.robot
+                con.say("这次用腕部相机看屏幕")
+            else:
+                robot = con.run_robot()
+                device = RobotTabletDevice(robot, ConsoleCamera(con), con.rectifier, nav=con.setup.nav, keyboard=keyboard, keep_up=con.keep_up)
+            clauses = by_steps.split(run.instruction, by_steps.app_names(config.DEFAULT_SETUP_PATH.with_name("app_names.json"))) if note is None and not (wrist is not None and wrist.use) else None
+            if clauses:
+                con.say("拆成 " + "；".join(f"{i}. {c.text}" for i, c in enumerate(clauses, 1)))
+            make = gui_agent.GuiAgent if not clauses else functools.partial(by_steps.StepAgent, clauses=clauses)
+            agent = make(
                 device,
                 base_url=self.options.vlm_url,
                 model=self.options.model,
@@ -271,7 +410,9 @@ class RunSession:
             self._finish(run, "error", f"{type(exc).__name__}: {exc}" if not str(exc) else str(exc))
             raise
         finally:
-            if robot is not None and robot.where is ArmPlace.HOVER and not con.stop.is_set():
+            if done is not None:
+                done()  # from the look pose back to the park pose; the wrist camera is released
+            elif robot is not None and robot.where in (ArmPlace.HOVER, ArmPlace.VIEW) and not con.stop.is_set():
                 robot.to_park()
         con.say(
             f"■ {JOB_NAME}结束：{STATUS_TEXT.get(run.status, run.status)}" + (f"，{run.answer}" if run.answer else "")
@@ -303,7 +444,45 @@ class RunSession:
             "camera_open": self.console.camera is not None,
             "keyboard": self.console.setup.keyboard is not None,
             "add_info": gui_agent.add_info_for(typing=self.console.setup.keyboard is not None),
+            "model": self.model_server.status(bool(services["vlm"]["ok"])),
+            "nav": self.console.setup.nav,
+            "last_tap": self.last_tap(),
         }
+
+    # ---- the tablet's own keys ---------------------------------------------------------------------------------------
+    def last_tap(self) -> list[float] | None:
+        """Where the newest click on the "点按" page was aimed, as [u, v]."""
+        taps = self.console.taps
+        return [round(float(taps[-1]["u"]), 4), round(float(taps[-1]["v"]), 4)] if taps else None
+
+    def set_nav(self, changes: Any) -> dict[str, list[float]] | None:
+        """Where the tablet's Home and Back keys are. ``{"home": [u, v]}`` or ``{"back": ...}`` sets one of them,
+        ``{"home": "last"}`` takes the newest click, ``{"gestures": true}`` says the tablet has no keys (Home and Back
+        are then swipes from the edges)."""
+        if not isinstance(changes, dict):
+            raise ValueError("导航键的设置应是一个对照表")
+        setup = self.console.setup
+        if changes.get("gestures"):
+            setup.nav = None
+        else:
+            nav = dict(setup.nav or {})
+            for key in ("home", "back"):
+                if key not in changes:
+                    continue
+                where = self.last_tap() if changes[key] == "last" else changes[key]
+                if where is None:
+                    raise SetupError("还没有在“点按”页点过屏幕：先在那边点一下这个键的位置")
+                u, v = float(where[0]), float(where[1])
+                if not (0.0 <= u <= 1.0 and 0.0 <= v <= 1.0):
+                    raise ValueError("位置应在 0 到 1 之间")
+                nav[key] = [round(u, 4), round(v, 4)]
+            if not nav:
+                raise ValueError("要给出 home 或 back 的位置")
+            setup.nav = nav
+        self.console.store.save(setup)
+        self.console.say("导航键：" + ("手势导航（主页和返回用从边缘划）" if setup.nav is None else
+                                   "、".join(f"{'主页' if k == 'home' else '返回'} ({v[0]:.3f}, {v[1]:.3f})" for k, v in setup.nav.items())))  # fmt: skip
+        return setup.nav
 
     def history(self) -> list[dict[str, Any]]:
         """Finished runs on disk, newest first."""
@@ -500,7 +679,7 @@ def register(app: flask.Flask, console: Any, token: str = "", session: RunSessio
     def run_start() -> Any:
         data = body()
         note = data.get("add_info")
-        started = run.start(data.get("instruction", ""), data.get("max_steps", 15), data.get("settle_s", 0.8),
+        started = run.start(data.get("instruction", ""), data.get("max_steps", 15), data.get("settle_s"),
                             None if note is None else str(note))  # fmt: skip
         return flask.jsonify(started.to_json()), 202
 
@@ -534,6 +713,31 @@ def register(app: flask.Flask, console: Any, token: str = "", session: RunSessio
     def run_presets() -> Any:
         presets = save_presets(body().get("presets")) if flask.request.method == "POST" else load_presets()
         return flask.jsonify({"presets": presets})
+
+    @app.post("/api/run/model")
+    @guarded
+    def run_model() -> Any:
+        data = body()
+        if data.get("action") == "start":
+            pid = run.model_server.start(str(data.get("model", "8b")))
+            console.say(f"模型服务在启动（进程 {pid}，日志 {run.model_server.log_path}），加载要一两分钟")
+            return flask.jsonify({"ok": True, "pid": pid}), 202
+        if data.get("action") == "stop":
+            if console.busy == JOB_NAME:
+                raise BusyError("正在执行指令：先点“停止”")
+            stopped = run.model_server.stop()
+            console.say("模型服务已停止，显卡已让出" if stopped else "没有这个页面启动的模型服务")
+            return flask.jsonify({"ok": True, "stopped": stopped})
+        raise ValueError("action 应是 start 或 stop")
+
+    @app.route("/api/run/nav", methods=["GET", "POST"])
+    @guarded
+    def run_nav() -> Any:
+        if flask.request.method == "POST":
+            if run.console.busy is not None:
+                raise BusyError("正在执行别的任务，稍后再改导航键")
+            run.set_nav(body())
+        return flask.jsonify({"nav": run.console.setup.nav, "last_tap": run.last_tap()})
 
     @app.route("/api/run/keyboard", methods=["GET", "POST"])
     @guarded

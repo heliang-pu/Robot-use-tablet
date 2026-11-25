@@ -13,7 +13,7 @@ def test_every_command_is_registered_once_with_help():
     registered = commands.commands()
     names = [c.name for c in registered]
     assert names == ["status", "recover", "limits", "tablet", "teach", "view", "board", "place", "probe", "taptest", "park", "hover", "tap", "swipe",
-                     "home", "back", "shot", "run"]  # fmt: skip
+                     "home", "back", "shot", "run", "wrist"]  # fmt: skip
     assert all(c.help for c in registered)
     by_name = {c.name: c for c in registered}
     assert by_name["status"].arm is ArmUse.READS and by_name["view"].arm is ArmUse.NONE

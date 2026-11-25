@@ -219,7 +219,7 @@ function render(s) {
   if (arm.q) {
     info += `关节 (rad)  ${arm.q.map(x => x.toFixed(3)).join('  ')}\n笔尖 (mm)   x ${arm.tip_mm[0]}  y ${arm.tip_mm[1]}  z ${arm.tip_mm[2]}`;
     if (s.place) info += s.place.u === undefined ? '\n位置：停靠位姿' :
-      `\n相对屏幕   u ${s.place.u.toFixed(3)}  v ${s.place.v.toFixed(3)}  高 ${s.place.height_mm} mm（${{park: '停靠位姿', hover: '屏幕上方', unknown: '位置未知'}[s.place.where]}）`;
+      `\n相对屏幕   u ${s.place.u.toFixed(3)}  v ${s.place.v.toFixed(3)}  高 ${s.place.height_mm} mm（${{park: '停靠位姿', hover: '屏幕上方', view: '看图位', unknown: '位置未知'}[s.place.where]}）`;
   }
   info += `\n停靠位姿：${s.setup.park_set ? '已记录' : '未记录'}`;
   $('arm-info').textContent = info; $('arm-info').style.whiteSpace = 'pre';

@@ -23,6 +23,21 @@ def saved_path(ctx: AppContext) -> pathlib.Path:
     return ctx.store.path.parent / f"firmware_limits_{ctx.setup.arm.channel}.json"
 
 
+def remember(ctx: AppContext, limits: dict[int, tuple[float, float]]) -> bool:
+    """Keep what the firmware says in the setup file, where planning and the driver's clamp take this arm's limits
+    from. Only that row is written (not what the command line changed for this one run). True: the row is new or has
+    changed."""
+    channel = ctx.setup.arm.channel
+    rows = [[round(float(np.degrees(v)), 1) for v in limits[joint]] for joint in range(1, 7)]
+    if ctx.setup.arm.firmware_limits_deg.get(channel) == rows:
+        return False
+    ctx.setup.arm.firmware_limits_deg[channel] = rows
+    on_disk = ctx.store.load()
+    on_disk.arm.firmware_limits_deg[channel] = rows
+    ctx.store.save(on_disk)
+    return True
+
+
 def console_holds_arm(url: str) -> bool:
     """Whether the browser console (another process) is connected to the arm; False when it does not answer."""
     session = requests.Session()
@@ -52,6 +67,8 @@ class Limits(Command):
         require_hardware("读写机械臂的固件限位")
         now = arm.firmware_joint_limits()
         show(now)
+        if remember(ctx, now):
+            print(f"规划用的限位已经按它更新（记在 {ctx.store.path}）。")
         path = saved_path(ctx)
         saved = json.loads(path.read_text()) if path.exists() else None
         if saved is not None:
@@ -89,8 +106,7 @@ class Limits(Command):
         others = [j for j in now if j != 5 and not np.allclose(now[j], after[j], atol=2e-3)]
         if abs(np.degrees(after[5][1]) - wanted) > 0.15 or others:
             raise SetupError(f"写入后读回来不对（5 号上限 {np.degrees(after[5][1]):.1f}°，别的关节变了：{others}）。")
-        ctx.setup.arm.joint5_limit_deg = wanted
-        ctx.save_setup()
+        remember(ctx, after)
         print(f"5 号关节的上限现在是 {wanted:g}°，规划也按它走。手臂没有动。")
 
 

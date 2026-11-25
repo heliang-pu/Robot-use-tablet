@@ -4,6 +4,7 @@ import http.server
 import json
 import threading
 import time
+import types
 
 import cv2
 import numpy as np
@@ -75,7 +76,8 @@ def services():
 @pytest.fixture
 def bench(tmp_path, monkeypatch, services):
     monkeypatch.setattr(config, "PROJECT_ROOT", tmp_path)
-    monkeypatch.setattr("tablet_tap.agent.robot_device.time.sleep", lambda s: None)
+    # only that module's: without any sleep the console's camera thread spins, and frames come too late now and then
+    monkeypatch.setattr("tablet_tap.agent.robot_device.time", types.SimpleNamespace(sleep=lambda s: None))
     con = web.Console(
         config.SetupStore(tmp_path / "setup.json"),
         tmp_path / "view.json",
@@ -135,8 +137,8 @@ def test_an_instruction_is_carried_out_and_every_step_is_shown(bench):
         call({"action": "terminate", "status": "success"}),
     ]
     model.gate.clear()
-    started = start(client, instruction="  打开音乐，\n播放音乐 ", max_steps=5)
-    assert started["instruction"] == "打开音乐，\n播放音乐" and started["status"] == "running"
+    started = start(client, instruction="  打开音乐，\n找到播放键 ", max_steps=5)
+    assert started["instruction"] == "打开音乐，\n找到播放键" and started["status"] == "running"
     wait_for(lambda: len(model.asked) == 1)
     assert client.get("/api/run/state").get_json()["busy"] == "执行指令"
     assert start(client, 409, instruction="下一首")["error"].startswith("正在执行")
@@ -156,7 +158,7 @@ def test_an_instruction_is_carried_out_and_every_step_is_shown(bench):
     assert np.allclose(con.arm._arm.q, con.setup.park_q, atol=1e-3)
     # the model was asked with the instruction, the stylus note and a picture
     text = json.dumps(model.asked[0], ensure_ascii=False)
-    assert "打开音乐，\\n播放音乐" in text and "step_01.png" in text
+    assert "打开音乐，\\n找到播放键" in text and "step_01.png" in text
 
     picture = client.get(f"/api/run/{started['id']}/step_1.jpg?anno=1")
     image = cv2.imdecode(np.frombuffer(picture.data, np.uint8), cv2.IMREAD_COLOR)
@@ -171,7 +173,7 @@ def test_an_instruction_is_carried_out_and_every_step_is_shown(bench):
     history = client.get("/api/run/history").get_json()["runs"]
     assert history[0]["id"] == started["id"] and history[0]["status"] == "success" and history[0]["steps"] == 2
     again = RunSession(con, session_options()).load(started["id"])  # a restarted console reads it from disk
-    assert again["n_steps"] == 2 and again["instruction"] == "打开音乐，\n播放音乐"
+    assert again["n_steps"] == 2 and again["instruction"] == "打开音乐，\n找到播放键"
 
 
 def session_options():
@@ -357,7 +359,7 @@ def test_the_prompt_tab_sends_lines_and_its_own_note(bench):
     default = client.get("/api/run/state").get_json()["add_info"]
     assert "机械臂" in default
     for body, want, absent in (
-        ({"instruction": " 打开音乐 \n\n 播放第一首 "}, "打开音乐\n播放第一首 (" + default + ")", "XX"),
+        ({"instruction": " 打开音乐 \n\n 找到第一首 "}, "打开音乐\n找到第一首 (" + default + ")", "XX"),
         ({"instruction": "打开音乐", "add_info": "只用右手边的图标"}, "打开音乐 (只用右手边的图标)", default),
         ({"instruction": "打开音乐", "add_info": ""}, "打开音乐", default),
     ):
@@ -367,3 +369,45 @@ def test_the_prompt_tab_sends_lines_and_its_own_note(bench):
         asked = json.dumps(model.asked, ensure_ascii=False, default=str)
         assert json.dumps(want, ensure_ascii=False)[1:-1] in asked and absent not in asked
     assert "附加说明太长" in start(client, 400, instruction="x", add_info="长" * 1100)["error"]
+
+
+# ---- the model server, started and stopped from the page ----------------------------------------------------------
+def test_the_page_starts_and_stops_the_model_server(tmp_path, monkeypatch):
+    """The page runs the start script in a process group of its own and ends all of it again; a script that refuses
+    (too little free memory on the graphics card) is reported with what it printed."""
+    monkeypatch.setattr(config, "PROJECT_ROOT", tmp_path)
+    (tmp_path / "scripts").mkdir()
+    serves = tmp_path / "scripts" / "serve_fake.sh"
+    serves.write_text('echo "loading $*"\nsleep 60 &\nwait\n')
+    server = run_page.ModelServer(RunOptions(vlm_url="http://127.0.0.1:8899/v1"), serves)
+    assert server.port == 8899 and server.pid() is None and server.stop() is False
+    pid = server.start()
+    assert server.pid() == pid and "--port 8899" in server.log_path.read_text()
+    status = server.status(serving=False)
+    assert status["starting"] and status["ours"] and status["log"]
+    with pytest.raises(run_page.BusyError):
+        server.start()
+    assert run_page.ModelServer(server.options, serves).pid() == pid  # a console started again finds it by its file
+    assert server.stop() is True and server.pid() is None and not server.pid_path.exists()
+    refuses = tmp_path / "scripts" / "serve_refuses.sh"
+    refuses.write_text('echo "空闲显存不够：要占 24000 MiB，只剩 9000 MiB。"\nexit 3\n')
+    with pytest.raises(run_page.SetupError, match="退出码 3.*空闲显存不够"):
+        run_page.ModelServer(server.options, refuses).start()
+    with pytest.raises(ValueError):
+        server.start("70b")
+
+
+def test_navigation_keys_are_set_from_the_page(bench):
+    """Where Home and Back are is taken from the newest click, set by numbers, or given up for gestures."""
+    con, client, _, _, _ = bench
+    state = client.get("/api/run/state").get_json()
+    assert set(state["model"]) >= {"serving", "starting", "ours", "gpu"} and state["last_tap"] is None
+    assert client.post("/api/run/nav", json={"home": "last"}).status_code == 400  # nothing was clicked yet
+    assert client.post("/api/run/nav", json={"home": [0.5, 0.97]}).get_json()["nav"]["home"] == [0.5, 0.97]
+    con.taps.append({"u": 0.7512, "v": 0.9611, "tu": None, "tv": None, "error_mm": None, "slow": False})
+    answer = client.post("/api/run/nav", json={"back": "last"}).get_json()
+    assert answer["nav"] == {"home": [0.5, 0.97], "back": [0.7512, 0.9611]} and answer["last_tap"] == [0.7512, 0.9611]
+    assert config.SetupStore(con.store.path).load().nav == answer["nav"]
+    assert client.post("/api/run/nav", json={"back": [1.2, 0.5]}).status_code == 400
+    assert client.post("/api/run/nav", json={"gestures": True}).get_json()["nav"] is None
+    assert client.get("/api/run/state").get_json()["nav"] is None

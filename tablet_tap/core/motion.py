@@ -25,6 +25,10 @@ class MotionLimits:
     travel_speed: float = 0.12  # m/s, average over a lateral move
     press_speed: float = 0.04  # m/s, average going down and up
     dwell_s: float = 0.08  # contact time of a tap
+    dip_m: float = 0.002  # a tap stops this far above the glass, settles, and only then dips onto it
+    dip_speed: float = 0.05  # m/s, average of the dip and of the lift after it: Android takes 400-500 ms for a long press
+    dip_dwell_s: float = 0.06  # how long the dip stays down
+    dip_extra_m: float = 0.001  # deeper than ``press_m``: the arm lags behind a dip and does not get all the way down
     max_joint_speed: float = 1.2  # rad/s: a segment is slowed down until no joint is faster
     joint_move_speed: float = 0.6  # rad/s, average of the fastest joint in a joint-space move (park <-> screen)
     min_segment_s: float = 0.12
@@ -90,6 +94,27 @@ def axis_move(
     return Segment(name, path, **kwargs)
 
 
+def _turn_between(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """The rotation vector, in the frame of orientation ``a``, that turns ``a`` into ``b`` (for small turns)."""
+    r = a.T @ b
+    angle = float(np.arccos(np.clip((np.trace(r) - 1.0) / 2.0, -1.0, 1.0)))
+    if angle < 1e-9:
+        return np.zeros(3)
+    if angle > np.radians(20.0):
+        raise ValueError(f"起点和终点的笔朝向差 {np.degrees(angle):.0f}°，不是一条直线移动能做的。")
+    return angle * np.array([r[2, 1] - r[1, 2], r[0, 2] - r[2, 0], r[1, 0] - r[0, 1]]) / (2.0 * np.sin(angle))
+
+
+def _rotation(vector: np.ndarray) -> np.ndarray:
+    """Rodrigues: the rotation matrix of a rotation vector."""
+    angle = float(np.linalg.norm(vector))
+    if angle < 1e-12:
+        return np.eye(3)
+    x, y, z = vector / angle
+    k = np.array([[0.0, -z, y], [z, 0.0, -x], [-y, x, 0.0]])
+    return np.eye(3) + np.sin(angle) * k + (1.0 - np.cos(angle)) * (k @ k)
+
+
 class TapPlanner:
     def __init__(self, arm: PenArm, screen: ScreenMap, limits: MotionLimits | None = None) -> None:
         self.arm, self.screen, self.limits = arm, screen, limits or MotionLimits()
@@ -113,9 +138,12 @@ class TapPlanner:
         duration: float | None = None,
         **kwargs,
     ) -> Segment:
-        """Straight pen-tip move from ``start`` to ``goal`` (4, 4, same orientation) beginning at joints ``q_start``."""
+        """Straight pen-tip move from ``start`` to ``goal`` (4, 4) beginning at joints ``q_start``. Where the two differ
+        in orientation (by a few degrees: the screen was estimated again while the pen hovered) the pen turns from the
+        one to the other along the way."""
         lim = self.limits
         distance = float(np.linalg.norm(goal[:3, 3] - start[:3, 3]))
+        turn = _turn_between(start[:3, :3], goal[:3, :3])
         seconds = max(duration if duration is not None else distance / speed, lim.min_segment_s)
         while True:
             n = max(int(np.ceil(seconds * lim.hz)), 2)
@@ -123,6 +151,8 @@ class TapPlanner:
             for s in _min_jerk(n):
                 target = start.copy()
                 target[:3, 3] = start[:3, 3] + s * (goal[:3, 3] - start[:3, 3])
+                if turn.any():
+                    target[:3, :3] = start[:3, :3] @ _rotation(s * turn)
                 try:
                     q = self.arm.solve(target, q)
                 except Unreachable as exc:
@@ -155,22 +185,28 @@ class TapPlanner:
 
     def to_point(self, q: np.ndarray, u: float, v: float) -> Segment:
         """Lateral move at hover height to above (u, v)."""
+        # From the pose the pen has, not the one this screen would give it there: after a contact has moved the
+        # estimate of the screen the two differ by a degree or two, which is a jump of the wrist if taken at once.
         start = self.hover_pose_of(q)
-        start_level = pose(self.rot, start[:3, 3])
         return self.line(
-            "到位", start_level, self.tip_pose(u, v, self.limits.hover_m), q, self.limits.travel_speed, settle=True
+            "到位", start, self.tip_pose(u, v, self.limits.hover_m), q, self.limits.travel_speed, settle=True
         )
 
     def tap(self, q: np.ndarray, u: float, v: float, hold_s: float | None = None) -> list[Segment]:
-        """Move over (u, v), press, hold (``dwell_s``, or ``hold_s`` for a long press), lift."""
+        """Move over (u, v), press, hold, lift. A tap (``hold_s`` None) goes down to just above the glass, waits there
+        until the arm has arrived, and dips: waiting with the pen on the glass made every tap a long press (0.6-0.7 s on
+        the bench, 2026-11-23). A long press (``hold_s``) waits on the glass and then holds."""
         lim = self.limits
         over = self.to_point(q, u, v)
         up, down = self.tip_pose(u, v, lim.hover_m), self.tip_pose(u, v, -lim.press_m)
-        press = self.line(
-            "下压", up, down, over.q[-1], lim.press_speed, settle=True, hold_s=lim.dwell_s if hold_s is None else hold_s
-        )
-        lift = self.line("抬起", down, up, press.q[-1], lim.press_speed)
-        return [over, press, lift]
+        if hold_s is not None:
+            press = self.line("下压", up, down, over.q[-1], lim.press_speed, settle=True, hold_s=hold_s)
+            return [over, press, self.line("抬起", down, up, press.q[-1], lim.press_speed)]
+        near = self.tip_pose(u, v, min(lim.dip_m, 0.5 * lim.hover_m))
+        down = self.tip_pose(u, v, -lim.press_m - lim.dip_extra_m)
+        approach = self.line("接近", up, near, over.q[-1], lim.press_speed, settle=True)
+        dip = self.line("点", near, down, approach.q[-1], lim.dip_speed, hold_s=lim.dip_dwell_s)
+        return [over, approach, dip, self.line("抬起", down, up, dip.q[-1], lim.dip_speed)]
 
     def swipe(
         self, q: np.ndarray, u1: float, v1: float, u2: float, v2: float, duration_s: float = 0.5

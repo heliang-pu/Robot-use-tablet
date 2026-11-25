@@ -69,7 +69,7 @@
     <parent link="arm_base"/>
     <child link="link1"/>
     <axis xyz="0 0 1"/>
-    <limit lower="-2.618" upper="2.618" effort="100" velocity="5"/>
+    <limit lower="-2.6179938780" upper="2.6179938780" effort="100" velocity="5"/>
   </joint>
   <link name="link2">
     <inertial>
@@ -99,7 +99,7 @@
     <parent link="link1"/>
     <child link="link2"/>
     <axis xyz="0 0 1"/>
-    <limit lower="0" upper="3.14" effort="100" velocity="5"/>
+    <limit lower="0" upper="3.1415926536" effort="100" velocity="5"/>
   </joint>
   <link name="link3">
     <inertial>
@@ -129,7 +129,7 @@
     <parent link="link2"/>
     <child link="link3"/>
     <axis xyz="0 0 1"/>
-    <limit lower="-2.967" upper="0" effort="100" velocity="5"/>
+    <limit lower="-2.9670597284" upper="0" effort="100" velocity="5"/>
   </joint>
   <link name="link4">
     <inertial>
@@ -158,7 +158,7 @@
     <parent link="link3"/>
     <child link="link4"/>
     <axis xyz="0 0 1"/>
-    <limit lower="-1.745" upper="1.745" effort="100" velocity="5"/>
+    <limit lower="-1.7453292520" upper="1.7453292520" effort="100" velocity="5"/>
   </joint>
   <link name="link5">
     <inertial>
@@ -187,7 +187,7 @@
     <parent link="link4"/>
     <child link="link5"/>
     <axis xyz="0 0 1"/>
-    <limit lower="-1.3" upper="1.3" effort="100" velocity="5"/>
+    <limit lower="-1.2217304764" upper="1.3089969390" effort="100" velocity="5"/>
   </joint>
   <link name="link6">
     <inertial>
@@ -216,6 +216,6 @@
     <parent link="link5"/>
     <child link="link6"/>
     <axis xyz="0 0 1"/>
-    <limit lower="-2.988" upper="2.988" effort="100" velocity="3"/>
+    <limit lower="-3.1415926536" upper="3.1415926536" effort="100" velocity="3"/>
   </joint>
 </robot>

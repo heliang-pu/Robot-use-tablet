@@ -1,0 +1,485 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mujoco model="telehand_lite">
+  <compiler angle="radian" autolimits="true" meshdir="meshes" />
+  <option timestep="0.0005" integrator="implicitfast" noslip_iterations="10" gravity="0 0 -9.81" />
+  <default>
+    <joint type="hinge" damping="0.02" armature="2e-06" frictionloss="0" solreflimit="0.002 1" solimplimit="0.99 0.999 0.0001" />
+    <geom type="capsule" condim="4" solref="0.004 1" solimp="0.9 0.95 0.001" />
+    <position kp="1.5" kv="0.05" forcerange="-0.6 0.6" />
+  </default>
+  <asset>
+    <mesh name="index_dip" file="index_dip.stl" />
+    <mesh name="index_dip_col" file="index_dip_col.stl" />
+    <mesh name="index_mcp" file="index_mcp.stl" />
+    <mesh name="index_mcp_col" file="index_mcp_col.stl" />
+    <mesh name="index_pip" file="index_pip.stl" />
+    <mesh name="index_pip_col" file="index_pip_col.stl" />
+    <mesh name="middle_dip" file="middle_dip.stl" />
+    <mesh name="middle_dip_col" file="middle_dip_col.stl" />
+    <mesh name="middle_mcp" file="middle_mcp.stl" />
+    <mesh name="middle_mcp_col" file="middle_mcp_col.stl" />
+    <mesh name="middle_pip" file="middle_pip.stl" />
+    <mesh name="middle_pip_col" file="middle_pip_col.stl" />
+    <mesh name="pinky_dip" file="pinky_dip.stl" />
+    <mesh name="pinky_dip_col" file="pinky_dip_col.stl" />
+    <mesh name="pinky_mcp" file="pinky_mcp.stl" />
+    <mesh name="pinky_mcp_col" file="pinky_mcp_col.stl" />
+    <mesh name="pinky_pip" file="pinky_pip.stl" />
+    <mesh name="pinky_pip_col" file="pinky_pip_col.stl" />
+    <mesh name="ring_dip" file="ring_dip.stl" />
+    <mesh name="ring_dip_col" file="ring_dip_col.stl" />
+    <mesh name="ring_mcp" file="ring_mcp.stl" />
+    <mesh name="ring_mcp_col" file="ring_mcp_col.stl" />
+    <mesh name="ring_pip" file="ring_pip.stl" />
+    <mesh name="ring_pip_col" file="ring_pip_col.stl" />
+    <mesh name="root" file="root.stl" />
+    <mesh name="root_vis1" file="root_vis1.stl" />
+    <mesh name="root_col0" file="root_col0.stl" />
+    <mesh name="root_col1" file="root_col1.stl" />
+    <mesh name="root_col2" file="root_col2.stl" />
+    <mesh name="root_col3" file="root_col3.stl" />
+    <mesh name="root_col4" file="root_col4.stl" />
+    <mesh name="root_col5" file="root_col5.stl" />
+    <mesh name="root_col6" file="root_col6.stl" />
+    <mesh name="root_col7" file="root_col7.stl" />
+    <mesh name="root_col8" file="root_col8.stl" />
+    <mesh name="root_col9" file="root_col9.stl" />
+    <mesh name="root_col10" file="root_col10.stl" />
+    <mesh name="root_col11" file="root_col11.stl" />
+    <mesh name="root_col12" file="root_col12.stl" />
+    <mesh name="root_col13" file="root_col13.stl" />
+    <mesh name="root_col14" file="root_col14.stl" />
+    <mesh name="root_col15" file="root_col15.stl" />
+    <mesh name="root_col16" file="root_col16.stl" />
+    <mesh name="root_col17" file="root_col17.stl" />
+    <mesh name="root_col18" file="root_col18.stl" />
+    <mesh name="root_col19" file="root_col19.stl" />
+    <mesh name="root_col20" file="root_col20.stl" />
+    <mesh name="root_col21" file="root_col21.stl" />
+    <mesh name="root_col22" file="root_col22.stl" />
+    <mesh name="root_col23" file="root_col23.stl" />
+    <mesh name="thumb_flex" file="thumb_flex.stl" />
+    <mesh name="thumb_flex_col" file="thumb_flex_col.stl" />
+    <mesh name="thumb_ip" file="thumb_ip.stl" />
+    <mesh name="thumb_ip_col" file="thumb_ip_col.stl" />
+    <mesh name="thumb_rot" file="thumb_rot.stl" />
+    <mesh name="thumb_rot_col" file="thumb_rot_col.stl" />
+    <mesh name="thumb_rot_col_thumb_web" file="thumb_rot_col_thumb_web.stl" />
+    <mesh name="thumb_swing" file="thumb_swing.stl" />
+    <mesh name="thumb_swing_col" file="thumb_swing_col.stl" />
+    <mesh name="index_mcp_push_housing" file="index_mcp_push_housing.stl" />
+    <mesh name="index_mcp_push_rod" file="index_mcp_push_rod.stl" />
+    <mesh name="middle_mcp_push_housing" file="middle_mcp_push_housing.stl" />
+    <mesh name="middle_mcp_push_rod" file="middle_mcp_push_rod.stl" />
+    <mesh name="pinky_mcp_push_housing" file="pinky_mcp_push_housing.stl" />
+    <mesh name="pinky_mcp_push_rod" file="pinky_mcp_push_rod.stl" />
+    <mesh name="ring_mcp_push_housing" file="ring_mcp_push_housing.stl" />
+    <mesh name="ring_mcp_push_rod" file="ring_mcp_push_rod.stl" />
+    <mesh name="index_link_pip" file="index_link_pip.stl" />
+    <mesh name="index_link_dip" file="index_link_dip.stl" />
+    <mesh name="middle_link_pip" file="middle_link_pip.stl" />
+    <mesh name="middle_link_dip" file="middle_link_dip.stl" />
+    <mesh name="pinky_link_pip" file="pinky_link_pip.stl" />
+    <mesh name="pinky_link_dip" file="pinky_link_dip.stl" />
+    <mesh name="ring_link_pip" file="ring_link_pip.stl" />
+    <mesh name="ring_link_dip" file="ring_link_dip.stl" />
+    <mesh name="thumb_link_flex_a" file="thumb_link_flex_a.stl" />
+    <mesh name="thumb_link_flex_b" file="thumb_link_flex_b.stl" />
+    <mesh name="thumb_link_ip_a" file="thumb_link_ip_a.stl" />
+    <mesh name="thumb_link_ip_b" file="thumb_link_ip_b.stl" />
+    <mesh name="thumb_rot_drive_housing" file="thumb_rot_drive_housing.stl" />
+    <mesh name="thumb_rot_drive_rod" file="thumb_rot_drive_rod.stl" />
+  </asset>
+  <deformable>
+    <skin name="thumb_web" file="thumb_web.skn" rgba="0.8 0.45 0.35 1" />
+  </deformable>
+  <worldbody>
+    <light pos="0.06 0.12 0.40" dir="0 0 -1" directional="true" diffuse="0.7 0.7 0.7" />
+    <geom name="floor" type="plane" size="1 1 0.01" pos="0 0 -0.05" group="2" rgba="0.25 0.27 0.30 1" condim="3" />
+    <body name="root" pos="0.0548000018 0.0600000028 0.0200000009" quat="0.707106781 0 0.707106781 -0">
+      <inertial pos="-0.00152116092 0.00233726624 0.0104906054" mass="0.250248578" fullinertia="0.000250164 0.000140664 0.000138382 2.44417e-06 -1.98292e-08 9.56696e-06" />
+      <geom name="root_vis" type="mesh" mesh="root" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+      <geom name="root_vis1" type="mesh" mesh="root_vis1" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+      <geom name="root_col0" type="mesh" mesh="root_col0" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col1" type="mesh" mesh="root_col1" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col2" type="mesh" mesh="root_col2" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col3" type="mesh" mesh="root_col3" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col4" type="mesh" mesh="root_col4" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col5" type="mesh" mesh="root_col5" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col6" type="mesh" mesh="root_col6" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col7" type="mesh" mesh="root_col7" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col8" type="mesh" mesh="root_col8" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col9" type="mesh" mesh="root_col9" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col10" type="mesh" mesh="root_col10" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col11" type="mesh" mesh="root_col11" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col12" type="mesh" mesh="root_col12" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col13" type="mesh" mesh="root_col13" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col14" type="mesh" mesh="root_col14" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col15" type="mesh" mesh="root_col15" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col16" type="mesh" mesh="root_col16" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col17" type="mesh" mesh="root_col17" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col18" type="mesh" mesh="root_col18" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col19" type="mesh" mesh="root_col19" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col20" type="mesh" mesh="root_col20" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col21" type="mesh" mesh="root_col21" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col22" type="mesh" mesh="root_col22" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <geom name="root_col23" type="mesh" mesh="root_col23" density="1500" rgba="0.85 0.35 0.30 0.25" />
+      <site name="index_mcp_push_A" pos="-0.00226239059 -0.0190096428 -0.019979999" size="0.0012" group="4" rgba="0.9 0.8 0.2 1" />
+      <body name="index_mcp_push_housing" pos="-0.00226239059 -0.0190096428 -0.019979999" quat="0.706762319 0.0174832971 -0.707017268 0.0175482647">
+        <inertial pos="-1.91072196e-07 0.0257948934 -1.10772054e-08" mass="0.00810588764" fullinertia="1.69071e-06 1.35917e-07 1.69103e-06 5.21792e-15 2.44457e-17 7.25294e-13" />
+        <joint name="index_mcp_push_pivot" type="hinge" axis="1 0 0" limited="false" />
+        <geom name="index_mcp_push_housing_vis" type="mesh" mesh="index_mcp_push_housing" group="3" contype="0" conaffinity="0" density="0" rgba="0.36 0.40 0.46 1" />
+        <body name="index_mcp_push_rod">
+          <inertial pos="-2.32090674e-08 0.0509289886 5.46464525e-09" mass="0.00109323951" fullinertia="4.00203e-08 6.23077e-09 3.98607e-08 -1.36234e-13 -2.73884e-16 1.62045e-14" />
+          <joint name="index_mcp_push" type="slide" axis="0 -1 0" limited="false" armature="5" frictionloss="0" solreffriction="0.001 1" />
+          <geom name="index_mcp_push_rod_vis" type="mesh" mesh="index_mcp_push_rod" group="3" contype="0" conaffinity="0" density="0" rgba="0.36 0.40 0.46 1" />
+        </body>
+      </body>
+      <site name="middle_mcp_push_A" pos="-0.0022599979 -0.0140070709 1.99995259e-05" size="0.0012" group="4" rgba="0.9 0.8 0.2 1" />
+      <body name="middle_mcp_push_housing" pos="-0.0022599979 -0.0140070709 1.99995259e-05" quat="0.706761935 0.0174987986 -0.707016883 0.0175637718">
+        <inertial pos="-1.91072196e-07 0.0257948934 -1.10772054e-08" mass="0.00810588764" fullinertia="1.69071e-06 1.35917e-07 1.69103e-06 5.21792e-15 2.44457e-17 7.25294e-13" />
+        <joint name="middle_mcp_push_pivot" type="hinge" axis="1 0 0" limited="false" />
+        <geom name="middle_mcp_push_housing_vis" type="mesh" mesh="middle_mcp_push_housing" group="3" contype="0" conaffinity="0" density="0" rgba="0.36 0.40 0.46 1" />
+        <body name="middle_mcp_push_rod">
+          <inertial pos="-2.32090674e-08 0.0509289886 5.46464525e-09" mass="0.00109323951" fullinertia="4.00203e-08 6.23077e-09 3.98607e-08 -1.36234e-13 -2.73884e-16 1.62045e-14" />
+          <joint name="middle_mcp_push" type="slide" axis="0 -1 0" limited="false" armature="5" frictionloss="0" solreffriction="0.001 1" />
+          <geom name="middle_mcp_push_rod_vis" type="mesh" mesh="middle_mcp_push_rod" group="3" contype="0" conaffinity="0" density="0" rgba="0.36 0.40 0.46 1" />
+        </body>
+      </body>
+      <site name="pinky_mcp_push_A" pos="-0.00222211136 -0.0229988802 0.0400199998" size="0.0012" group="4" rgba="0.9 0.8 0.2 1" />
+      <body name="pinky_mcp_push_housing" pos="-0.00222211136 -0.0229988802 0.0400199998" quat="0.706756872 0.0177021223 -0.707011801 0.0177671689">
+        <inertial pos="-1.91072196e-07 0.0257948934 -1.10772054e-08" mass="0.00810588764" fullinertia="1.69071e-06 1.35917e-07 1.69103e-06 5.21792e-15 2.44457e-17 7.25294e-13" />
+        <joint name="pinky_mcp_push_pivot" type="hinge" axis="1 0 0" limited="false" />
+        <geom name="pinky_mcp_push_housing_vis" type="mesh" mesh="pinky_mcp_push_housing" group="3" contype="0" conaffinity="0" density="0" rgba="0.36 0.40 0.46 1" />
+        <body name="pinky_mcp_push_rod">
+          <inertial pos="-2.32090674e-08 0.0509289886 5.46464525e-09" mass="0.00109323951" fullinertia="4.00203e-08 6.23077e-09 3.98607e-08 -1.36234e-13 -2.73884e-16 1.62045e-14" />
+          <joint name="pinky_mcp_push" type="slide" axis="0 -1 0" limited="false" armature="5" frictionloss="0" solreffriction="0.001 1" />
+          <geom name="pinky_mcp_push_rod_vis" type="mesh" mesh="pinky_mcp_push_rod" group="3" contype="0" conaffinity="0" density="0" rgba="0.36 0.40 0.46 1" />
+        </body>
+      </body>
+      <site name="ring_mcp_push_A" pos="-0.0022622629 -0.0190069882 0.0200199801" size="0.0012" group="4" rgba="0.9 0.8 0.2 1" />
+      <body name="ring_mcp_push_housing" pos="-0.0022622629 -0.0190069882 0.0200199801" quat="0.706762381 0.0174807794 -0.707017331 0.0175457461">
+        <inertial pos="-1.91072196e-07 0.0257948934 -1.10772054e-08" mass="0.00810588764" fullinertia="1.69071e-06 1.35917e-07 1.69103e-06 5.21792e-15 2.44457e-17 7.25294e-13" />
+        <joint name="ring_mcp_push_pivot" type="hinge" axis="1 0 0" limited="false" />
+        <geom name="ring_mcp_push_housing_vis" type="mesh" mesh="ring_mcp_push_housing" group="3" contype="0" conaffinity="0" density="0" rgba="0.36 0.40 0.46 1" />
+        <body name="ring_mcp_push_rod">
+          <inertial pos="-2.32090674e-08 0.0509289886 5.46464525e-09" mass="0.00109323951" fullinertia="4.00203e-08 6.23077e-09 3.98607e-08 -1.36234e-13 -2.73884e-16 1.62045e-14" />
+          <joint name="ring_mcp_push" type="slide" axis="0 -1 0" limited="false" armature="5" frictionloss="0" solreffriction="0.001 1" />
+          <geom name="ring_mcp_push_rod_vis" type="mesh" mesh="ring_mcp_push_rod" group="3" contype="0" conaffinity="0" density="0" rgba="0.36 0.40 0.46 1" />
+        </body>
+      </body>
+      <site name="thumb_swing_push_A" pos="-0.00125999905 -0.0301000028 0.0305199982" size="0.0012" group="4" rgba="0.9 0.8 0.2 1" />
+      <body name="index_link_pip_hinge" pos="0.00253372306 0.0421576653 -0.0199782413" quat="0.698489895 0.10922686 -0.698734234 0.109324425">
+        <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+        <joint name="index_link_pip_pivot" type="hinge" axis="1 0 0" limited="false" armature="1e-06" damping="1e-05" />
+        <body name="index_link_pip">
+          <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+          <joint name="index_link_pip_slide" type="slide" axis="0 1 0" limited="true" range="-0.012 0.012" armature="1e-05" damping="1e-04" />
+          <geom name="index_link_pip_vis" type="mesh" mesh="index_link_pip" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+        </body>
+      </body>
+      <body name="middle_link_pip_hinge" pos="0.00252744842 0.0471593236 2.13431163e-05" quat="0.698435144 0.109576412 -0.698679434 0.109674099">
+        <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+        <joint name="middle_link_pip_pivot" type="hinge" axis="1 0 0" limited="false" armature="1e-06" damping="1e-05" />
+        <body name="middle_link_pip">
+          <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+          <joint name="middle_link_pip_slide" type="slide" axis="0 1 0" limited="true" range="-0.012 0.012" armature="1e-05" damping="1e-04" />
+          <geom name="middle_link_pip_vis" type="mesh" mesh="middle_link_pip" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+        </body>
+      </body>
+      <body name="pinky_link_pip_hinge" pos="0.00251116712 0.0381626426 0.040047086" quat="0.698470025 0.109353854 -0.698714345 0.109451463">
+        <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+        <joint name="pinky_link_pip_pivot" type="hinge" axis="1 0 0" limited="false" armature="1e-06" damping="1e-05" />
+        <body name="pinky_link_pip">
+          <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+          <joint name="pinky_link_pip_slide" type="slide" axis="0 1 0" limited="true" range="-0.012 0.012" armature="1e-05" damping="1e-04" />
+          <geom name="pinky_link_pip_vis" type="mesh" mesh="pinky_link_pip" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+        </body>
+      </body>
+      <body name="ring_link_pip_hinge" pos="0.00251921433 0.042160982 0.020021756" quat="0.698441724 0.109534462 -0.69868602 0.109632134">
+        <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+        <joint name="ring_link_pip_pivot" type="hinge" axis="1 0 0" limited="false" armature="1e-06" damping="1e-05" />
+        <body name="ring_link_pip">
+          <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+          <joint name="ring_link_pip_slide" type="slide" axis="0 1 0" limited="true" range="-0.012 0.012" armature="1e-05" damping="1e-04" />
+          <geom name="ring_link_pip_vis" type="mesh" mesh="ring_link_pip" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+        </body>
+      </body>
+      <body name="index_mcp" pos="-0.000659016327 0.0389864481 -0.019979999" quat="0.999005015 -8.28199526e-05 -0.00018081692 0.0445975487">
+        <joint name="index_mcp" axis="0 0 1" range="0 1.57079637" limited="true" />
+        <inertial pos="0.00175547727 0.0168461133 1.85238021e-05" mass="0.00681996" fullinertia="9.94881e-07 2.94813e-07 9.91842e-07 2.49195e-09 9.06744e-10 3.61675e-09" />
+        <geom name="index_mcp_vis" type="mesh" mesh="index_mcp" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+        <geom name="index_mcp_col" type="mesh" mesh="index_mcp_col" density="1500" rgba="0.85 0.35 0.30 0.25" />
+        <site name="index_mcp_push_B" pos="-0.0043106326 0.00419830165 2.28790104e-06" size="0.0012" group="4" rgba="0.9 0.8 0.2 1" />
+        <body name="index_link_dip_hinge" pos="0.00244687731 0.0348008444 -4.68787376e-05" quat="0.700098762 -0.0993062121 0.700092137 0.0993529041">
+          <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+          <joint name="index_link_dip_pivot" type="hinge" axis="1 0 0" limited="false" armature="1e-06" damping="1e-05" />
+          <body name="index_link_dip">
+            <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+            <joint name="index_link_dip_slide" type="slide" axis="0 1 0" limited="true" range="-0.012 0.012" armature="1e-05" damping="1e-04" />
+            <geom name="index_link_dip_vis" type="mesh" mesh="index_link_dip" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+          </body>
+        </body>
+        <body name="index_pip" pos="-4.33680869e-19 0.0318934728 1.27054942e-21" quat="0.998460345 0.000343645755 1.53916667e-05 0.055469099">
+          <joint name="index_pip" axis="0 0 1" range="0 1.57079637" limited="true" />
+          <inertial pos="0.00403696918 0.0167808181 5.43411556e-05" mass="0.00646839" fullinertia="1.04555e-06 2.70084e-07 1.03514e-06 -6.77805e-08 -2.01082e-10 2.63378e-09" />
+          <geom name="index_pip_vis" type="mesh" mesh="index_pip" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+          <geom name="index_pip_col" type="mesh" mesh="index_pip_col" density="1500" rgba="0.85 0.35 0.30 0.25" />
+          <body name="index_dip" pos="0 0.0344245342 -4.0234065e-21" quat="0.999983648 0.000230044582 4.86668071e-06 0.0057140382">
+            <joint name="index_dip" axis="0 0 1" range="0 1.57079637" limited="true" />
+            <inertial pos="0.00604685486 0.0113447293 -4.67120684e-05" mass="0.00616173" fullinertia="3.36421e-07 1.79502e-07 2.91722e-07 6.34525e-09 -2.02832e-10 -2.02201e-10" />
+            <geom name="index_dip_vis" type="mesh" mesh="index_dip" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+            <geom name="index_dip_col" type="mesh" mesh="index_dip_col" density="1500" rgba="0.85 0.35 0.30 0.25" />
+          </body>
+        </body>
+      </body>
+      <body name="thumb_swing" pos="-0.0129689262 -0.0499995784 -0.0127762271" quat="1 0 0 0">
+        <joint name="thumb_swing" axis="0 1 0" range="-0.785398163 0.959931089" limited="true" />
+        <inertial pos="-0.013842709 0.0194773142 -0.00593631668" mass="0.00211662768" fullinertia="4.43237e-08 2.49004e-07 2.1764e-07 5.33009e-09 -7.74777e-08 2.33442e-09" />
+        <geom name="thumb_swing_vis" type="mesh" mesh="thumb_swing" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+        <geom name="thumb_swing_col" type="mesh" mesh="thumb_swing_col" density="1500" rgba="0.85 0.35 0.30 0.25" />
+        <site name="thumb_rot_push_A" pos="-0.0155384774 0.0205809808 -0.0115847339" size="0.0012" group="4" rgba="0.9 0.8 0.2 1" />
+        <site name="thumb_swing_push_B" pos="0.00558000176 0.0198999995 0.0012299983" size="0.0012" group="4" rgba="0.9 0.8 0.2 1" />
+        <body name="thumb_link_flex_a" pos="-0.0308518764 0.0226359945 -0.0128859082" quat="0.539143964 0.129108994 -0.809343109 0.193954596">
+          <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+          <joint name="thumb_link_flex_a_pivot" type="hinge" axis="1 0 0" limited="false" armature="1e-06" damping="1e-05" />
+          <geom name="thumb_link_flex_a_vis" type="mesh" mesh="thumb_link_flex_a" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+          <body name="thumb_link_flex_a_aim">
+            <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+            <joint name="thumb_link_flex_a_slide" type="slide" axis="0 1 0" limited="true" range="-0.012 0.012" armature="1e-05" damping="1e-04" />
+          </body>
+        </body>
+        <body name="thumb_rot_drive_hinge" pos="-0.0155384774 0.0205809808 -0.0115847339" quat="0.783607827 -0.280380862 0.52201056 0.186682408">
+          <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+          <joint name="thumb_rot_drive_pivot" type="hinge" axis="1 0 0" limited="false" armature="1e-06" damping="1e-05" />
+          <geom name="thumb_rot_drive_outer_vis" type="mesh" mesh="thumb_rot_drive_housing" group="3" contype="0" conaffinity="0" density="0" rgba="0.36 0.40 0.46 1" />
+          <body name="thumb_rot_drive">
+            <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+            <joint name="thumb_rot_drive_slide" type="slide" axis="0 1 0" limited="true" range="-0.012 0.012" armature="1e-05" damping="1e-04" />
+            <geom name="thumb_rot_drive_vis" type="mesh" mesh="thumb_rot_drive_rod" group="3" contype="0" conaffinity="0" density="0" rgba="0.36 0.40 0.46 1" />
+          </body>
+        </body>
+        <body name="thumb_rot" pos="-0.0256460391 0.0205830329 -0.0107214949" quat="0.930663897 -0.0622798658 -0.186600834 0.308489963">
+          <joint name="thumb_rot" axis="0 0 1" range="-0.610865238 0" limited="true" />
+          <inertial pos="0.00536166139 0.0140357772 0.000222743645" mass="0.04975618" fullinertia="8.11557e-06 2.0636e-06 7.56118e-06 9.99997e-07 -9.77734e-10 -8.81929e-08" />
+          <geom name="thumb_rot_vis" type="mesh" mesh="thumb_rot" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+          <geom name="thumb_rot_col0" type="mesh" mesh="thumb_rot_col" density="1500" rgba="0.85 0.35 0.30 0.25" />
+          <geom name="thumb_rot_col1" type="mesh" mesh="thumb_rot_col_thumb_web" density="1500" rgba="0.85 0.35 0.30 0.25" />
+          <site name="thumb_rot_push_B" pos="0.00536057748 0.0341465065 -0.0040027726" size="0.0012" group="4" rgba="0.9 0.8 0.2 1" />
+          <body name="thumb_link_ip_a" pos="-0.00307824678 0.0457399539 -4.48656871e-06" quat="0.706628527 -0.0260024053 -0.706607472 -0.0265684028">
+            <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+            <joint name="thumb_link_ip_a_pivot" type="hinge" axis="1 0 0" limited="false" armature="1e-06" damping="1e-05" />
+            <geom name="thumb_link_ip_a_vis" type="mesh" mesh="thumb_link_ip_a" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+            <body name="thumb_link_ip_a_aim">
+              <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+              <joint name="thumb_link_ip_a_slide" type="slide" axis="0 1 0" limited="true" range="-0.012 0.012" armature="1e-05" damping="1e-04" />
+            </body>
+          </body>
+          <body name="thumb_flex" pos="3.46944695e-18 0.0431856596 -1.73472348e-18" quat="0.995978214 0.00105964396 2.35555256e-05 0.0895894785">
+            <joint name="thumb_flex" axis="0 0 1" limited="false" />
+            <inertial pos="0.000411813565 0.0138591003 9.83365892e-05" mass="0.00705345" fullinertia="7.60269e-07 4.43413e-07 6.82265e-07 4.85997e-08 4.52563e-10 -2.19679e-09" />
+            <geom name="thumb_flex_vis" type="mesh" mesh="thumb_flex" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+            <geom name="thumb_flex_col" type="mesh" mesh="thumb_flex_col" density="1500" rgba="0.85 0.35 0.30 0.25" />
+            <body name="thumb_link_flex_b" pos="0.00432880743 0.00250233968 4.01472637e-05" quat="0.123370609 0.696261225 -0.122446666 0.696424306">
+              <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+              <joint name="thumb_link_flex_b_pivot" type="hinge" axis="1 0 0" limited="false" armature="1e-06" damping="1e-05" />
+              <geom name="thumb_link_flex_b_vis" type="mesh" mesh="thumb_link_flex_b" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+              <body name="thumb_link_flex_b_aim">
+                <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+                <joint name="thumb_link_flex_b_slide" type="slide" axis="0 1 0" limited="true" range="-0.012 0.012" armature="1e-05" damping="1e-04" />
+              </body>
+            </body>
+            <body name="thumb_ip" pos="-1.73472348e-18 0.0230868075 -8.67361738e-19" quat="0.999977382 0.00598553982 -2.24305249e-05 -0.00306739554">
+              <joint name="thumb_ip" axis="0 0 1" limited="false" />
+              <inertial pos="0.000605763676 0.0106085836 -1.58246525e-05" mass="0.0082014" fullinertia="5.34841e-07 3.71918e-07 3.99912e-07 1.76423e-08 1.62567e-10 6.65774e-11" />
+              <geom name="thumb_ip_vis" type="mesh" mesh="thumb_ip" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+              <geom name="thumb_ip_col" type="mesh" mesh="thumb_ip_col" density="1500" rgba="0.85 0.35 0.30 0.25" />
+              <body name="thumb_link_ip_b" pos="0.00321754593 0.00237584451 -6.87645255e-05" quat="0.0919968469 0.701096698 -0.0826657636 0.702258052">
+                <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+                <joint name="thumb_link_ip_b_pivot" type="hinge" axis="1 0 0" limited="false" armature="1e-06" damping="1e-05" />
+                <geom name="thumb_link_ip_b_vis" type="mesh" mesh="thumb_link_ip_b" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+                <body name="thumb_link_ip_b_aim">
+                  <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+                  <joint name="thumb_link_ip_b_slide" type="slide" axis="0 1 0" limited="true" range="-0.012 0.012" armature="1e-05" damping="1e-04" />
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="middle_mcp" pos="-0.00066529112 0.0439881064 1.99995259e-05" quat="0.998986462 -2.42859432e-05 -0.000178169516 0.0450112968">
+        <joint name="middle_mcp" axis="0 0 1" range="0 1.57079637" limited="true" />
+        <inertial pos="0.00176203995 0.0168428376 1.9949594e-05" mass="0.00681996" fullinertia="9.94883e-07 2.94811e-07 9.91842e-07 2.12997e-09 9.091e-10 3.66561e-09" />
+        <geom name="middle_mcp_vis" type="mesh" mesh="middle_mcp" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+        <geom name="middle_mcp_col" type="mesh" mesh="middle_mcp_col" density="1500" rgba="0.85 0.35 0.30 0.25" />
+        <site name="middle_mcp_push_B" pos="-0.00430142193 0.00419541568 1.79267117e-06" size="0.0012" group="4" rgba="0.9 0.8 0.2 1" />
+        <body name="middle_link_dip_hinge" pos="0.00244687798 0.0348008312 -5.13762259e-05" quat="0.700028731 -0.0997986796 0.700033783 0.0997632297">
+          <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+          <joint name="middle_link_dip_pivot" type="hinge" axis="1 0 0" limited="false" armature="1e-06" damping="1e-05" />
+          <body name="middle_link_dip">
+            <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+            <joint name="middle_link_dip_slide" type="slide" axis="0 1 0" limited="true" range="-0.012 0.012" armature="1e-05" damping="1e-04" />
+            <geom name="middle_link_dip_vis" type="mesh" mesh="middle_link_dip" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+          </body>
+        </body>
+        <body name="middle_pip" pos="0 0.0318934659 2.11758237e-22" quat="0.998428033 0.000172725041 1.25345385e-05 0.0560484928">
+          <joint name="middle_pip" axis="0 0 1" range="0 1.57079637" limited="true" />
+          <inertial pos="0.00413910884 0.0167606002 5.40669753e-05" mass="0.00646839" fullinertia="1.0446e-06 2.71034e-07 1.03514e-06 -7.30189e-08 -1.9177e-10 2.38183e-09" />
+          <geom name="middle_pip_vis" type="mesh" mesh="middle_pip" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+          <geom name="middle_pip_col" type="mesh" mesh="middle_pip_col" density="1500" rgba="0.85 0.35 0.30 0.25" />
+          <body name="middle_dip" pos="-8.67361738e-19 0.0344245303 1.27054942e-21" quat="0.999541137 0.000520680731 2.77890869e-05 0.0302860394">
+            <joint name="middle_dip" axis="0 0 1" range="0 1.57079637" limited="true" />
+            <inertial pos="0.00620211733 0.0113608065 -5.08687577e-05" mass="0.00616173" fullinertia="3.36328e-07 1.79594e-07 2.91724e-07 7.39186e-09 -3.06428e-10 -1.92301e-10" />
+            <geom name="middle_dip_vis" type="mesh" mesh="middle_dip" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+            <geom name="middle_dip_col" type="mesh" mesh="middle_dip_col" density="1500" rgba="0.85 0.35 0.30 0.25" />
+          </body>
+        </body>
+      </body>
+      <body name="ring_mcp" pos="-0.000663389087 0.0389796249 0.0200199801" quat="0.998981844 -8.82325925e-05 -0.000181048816 0.0451135751">
+        <joint name="ring_mcp" axis="0 0 1" range="0 1.57079637" limited="true" />
+        <inertial pos="0.0017817247 0.0168320013 1.68286558e-05" mass="0.00681996" fullinertia="9.94874e-07 2.94819e-07 9.91843e-07 3.298e-09 9.03438e-10 3.52799e-09" />
+        <geom name="ring_mcp_vis" type="mesh" mesh="ring_mcp" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+        <geom name="ring_mcp_col" type="mesh" mesh="ring_mcp_col" density="1500" rgba="0.85 0.35 0.30 0.25" />
+        <site name="ring_mcp_push_B" pos="-0.00430075027 0.00420602304 2.33163646e-06" size="0.0012" group="4" rgba="0.9 0.8 0.2 1" />
+        <body name="ring_link_dip_hinge" pos="0.0024477723 0.034810537 -4.6484643e-05" quat="0.700074481 -0.0994772376 0.700066785 0.0995313854">
+          <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+          <joint name="ring_link_dip_pivot" type="hinge" axis="1 0 0" limited="false" armature="1e-06" damping="1e-05" />
+          <body name="ring_link_dip">
+            <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+            <joint name="ring_link_dip_slide" type="slide" axis="0 1 0" limited="true" range="-0.012 0.012" armature="1e-05" damping="1e-04" />
+            <geom name="ring_link_dip_vis" type="mesh" mesh="ring_link_dip" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+          </body>
+        </body>
+        <body name="ring_pip" pos="0 0.0319039184 2.11758237e-22" quat="0.99844568 9.49730593e-05 9.90642086e-07 0.0557334205">
+          <joint name="ring_pip" axis="0 0 1" range="0 1.57079637" limited="true" />
+          <inertial pos="0.00413728094 0.0167445188 5.02743245e-05" mass="0.00646839" fullinertia="1.04462e-06 2.71015e-07 1.03514e-06 -7.29056e-08 -1.95217e-10 2.63155e-09" />
+          <geom name="ring_pip_vis" type="mesh" mesh="ring_pip" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+          <geom name="ring_pip_col" type="mesh" mesh="ring_pip_col" density="1500" rgba="0.85 0.35 0.30 0.25" />
+          <body name="ring_dip" pos="-8.67361738e-19 0.0344245278 -4.23516474e-22" quat="0.999984687 0.000717973589 4.55933238e-06 0.00548735225">
+            <joint name="ring_dip" axis="0 0 1" range="0 1.57079637" limited="true" />
+            <inertial pos="0.00616786502 0.011331541 -3.4280682e-05" mass="0.00616173" fullinertia="3.3629e-07 1.79632e-07 2.91723e-07 7.78745e-09 -2.47512e-10 -6.18626e-11" />
+            <geom name="ring_dip_vis" type="mesh" mesh="ring_dip" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+            <geom name="ring_dip_col" type="mesh" mesh="ring_dip_col" density="1500" rgba="0.85 0.35 0.30 0.25" />
+          </body>
+        </body>
+      </body>
+      <body name="pinky_mcp" pos="-0.00067142712 0.0349812834 0.0400199998" quat="0.998990945 5.16254844e-05 -0.000174765038 0.0449116847">
+        <joint name="pinky_mcp" axis="0 0 1" range="0 1.30899692" limited="true" />
+        <inertial pos="0.00175286915 0.0168487357 2.30491658e-05" mass="0.00681996" fullinertia="9.94879e-07 2.9481e-07 9.91847e-07 2.04132e-09 9.17768e-10 3.59847e-09" />
+        <geom name="pinky_mcp_vis" type="mesh" mesh="pinky_mcp" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+        <geom name="pinky_mcp_col" type="mesh" mesh="pinky_mcp_col" density="1500" rgba="0.85 0.35 0.30 0.25" />
+        <site name="pinky_mcp_push_B" pos="-0.00429277019 0.00420350253 1.15125341e-06" size="0.0012" group="4" rgba="0.9 0.8 0.2 1" />
+        <body name="pinky_link_dip_hinge" pos="0.0024477723 0.0348105226 -5.59186986e-05" quat="0.697690098 -0.115015336 0.697713383 0.114873995">
+          <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+          <joint name="pinky_link_dip_pivot" type="hinge" axis="1 0 0" limited="false" armature="1e-06" damping="1e-05" />
+          <body name="pinky_link_dip">
+            <inertial pos="0 0 0" mass="0.0001" diaginertia="1e-09 1e-09 1e-09" />
+            <joint name="pinky_link_dip_slide" type="slide" axis="0 1 0" limited="true" range="-0.012 0.012" armature="1e-05" damping="1e-04" />
+            <geom name="pinky_link_dip_vis" type="mesh" mesh="pinky_link_dip" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+          </body>
+        </body>
+        <body name="pinky_pip" pos="-4.33680869e-19 0.0319039189 -1.48230766e-21" quat="0.998671422 -9.0480303e-05 5.77036994e-06 0.0515304052">
+          <joint name="pinky_pip" axis="0 0 1" range="0 1.57079637" limited="true" />
+          <inertial pos="0.0041525833 0.016768266 5.47307422e-05" mass="0.00646839" fullinertia="1.04462e-06 2.71018e-07 1.03514e-06 -7.29451e-08 -2.03933e-10 2.00342e-09" />
+          <geom name="pinky_pip_vis" type="mesh" mesh="pinky_pip" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+          <geom name="pinky_pip_col" type="mesh" mesh="pinky_pip_col" density="1500" rgba="0.85 0.35 0.30 0.25" />
+          <body name="pinky_dip" pos="-8.67361738e-19 0.0264244436 -4.23516474e-22" quat="0.999980204 0.00052484656 6.08861273e-06 0.00627030504">
+            <joint name="pinky_dip" axis="0 0 1" range="0 1.57079637" limited="true" />
+            <inertial pos="0.00617295617 0.0114488767 -4.96953876e-05" mass="0.00616173" fullinertia="3.36314e-07 1.79608e-07 2.91724e-07 7.54245e-09 -3.13601e-10 -1.36816e-10" />
+            <geom name="pinky_dip_vis" type="mesh" mesh="pinky_dip" group="3" contype="0" conaffinity="0" density="0" rgba="0.62 0.64 0.68 1" />
+            <geom name="pinky_dip_col" type="mesh" mesh="pinky_dip_col" density="1500" rgba="0.85 0.35 0.30 0.25" />
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+  <actuator>
+    <general name="act_thumb_swing" tendon="thumb_swing_push_len" gear="-1" gaintype="fixed" gainprm="10000000" biastype="affine" biasprm="-425103.656 -10000000 -4000" ctrlrange="-0.00524398976 0.00307303561" forcerange="-160 160" />
+    <general name="act_thumb_rot" tendon="thumb_rot_push_len" gear="-1" gaintype="fixed" gainprm="10000000" biastype="affine" biasprm="-395669.503 -10000000 -727.272727" ctrlrange="0 0.00496026508" forcerange="-40 40" />
+    <position name="act_index_mcp" joint="index_mcp_push" ctrlrange="0 0.00849588665" kp="10000000" kv="4000" forcerange="-160 160" />
+    <position name="act_middle_mcp" joint="middle_mcp_push" ctrlrange="0 0.00848370147" kp="10000000" kv="4000" forcerange="-160 160" />
+    <position name="act_ring_mcp" joint="ring_mcp_push" ctrlrange="0 0.00849404528" kp="10000000" kv="4000" forcerange="-160 160" />
+    <position name="act_pinky_mcp" joint="pinky_mcp_push" ctrlrange="0 0.00728800637" kp="10000000" kv="4000" forcerange="-160 160" />
+  </actuator>
+  <tendon>
+    <spatial name="index_mcp_push_len" width="0.0004" rgba="0.9 0.8 0.2 0">
+      <site site="index_mcp_push_A" />
+      <site site="index_mcp_push_B" />
+    </spatial>
+    <spatial name="middle_mcp_push_len" width="0.0004" rgba="0.9 0.8 0.2 0">
+      <site site="middle_mcp_push_A" />
+      <site site="middle_mcp_push_B" />
+    </spatial>
+    <spatial name="pinky_mcp_push_len" width="0.0004" rgba="0.9 0.8 0.2 0">
+      <site site="pinky_mcp_push_A" />
+      <site site="pinky_mcp_push_B" />
+    </spatial>
+    <spatial name="ring_mcp_push_len" width="0.0004" rgba="0.9 0.8 0.2 0">
+      <site site="ring_mcp_push_A" />
+      <site site="ring_mcp_push_B" />
+    </spatial>
+    <spatial name="thumb_rot_push_len" width="0.0004" rgba="0.9 0.8 0.2 0" frictionloss="0" armature="5" solreffriction="0.001 1">
+      <site site="thumb_rot_push_A" />
+      <site site="thumb_rot_push_B" />
+    </spatial>
+    <spatial name="thumb_swing_push_len" width="0.0004" rgba="0.9 0.8 0.2 0" frictionloss="0" armature="5" solreffriction="0.001 1">
+      <site site="thumb_swing_push_A" />
+      <site site="thumb_swing_push_B" />
+    </spatial>
+  </tendon>
+  <equality>
+    <joint joint1="index_pip" joint2="index_mcp" polycoef="0 1.292370028 -0.2538998646 0.02237998041 -7.665206377e-08" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <joint joint1="index_dip" joint2="index_mcp" polycoef="2.220446049e-16 1.476440032 -0.4557500283 0.07169997251 -3.569389868e-17" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <joint joint1="middle_pip" joint2="middle_mcp" polycoef="0 1.289730072 -0.2526398886 0.02169995396 -7.665206376e-08" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <joint joint1="middle_dip" joint2="middle_mcp" polycoef="0 1.471250057 -0.4520300362 0.07043999654 -3.569389868e-17" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <joint joint1="ring_pip" joint2="ring_mcp" polycoef="0 1.289730072 -0.2526398886 0.02169995396 -7.665206376e-08" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <joint joint1="ring_dip" joint2="ring_mcp" polycoef="2.220446049e-16 1.470840027 -0.4516101132 0.07035997179 1.149780956e-07" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <joint joint1="pinky_pip" joint2="pinky_mcp" polycoef="0 1.292370028 -0.2538998646 0.02237998041 -7.665206377e-08" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <joint joint1="pinky_dip" joint2="pinky_mcp" polycoef="4.440892099e-16 1.548969944 -0.540529909 0.09307003132 -7.66520638e-08" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <joint joint1="thumb_flex" joint2="thumb_rot" polycoef="-8.881784197e-16 0.9744701121 2.405910028 5.364509828 -2.284409516e-15" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <joint joint1="thumb_ip" joint2="thumb_flex" polycoef="0 1.406709949 0.3658999999 0.09326002112 -4.461737335e-17" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <connect name="index_mcp_push_loop" body1="index_mcp_push_rod" body2="index_mcp" anchor="0 0.0618695147 0" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <connect name="middle_mcp_push_loop" body1="middle_mcp_push_rod" body2="middle_mcp" anchor="0 0.0618628136 0" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <connect name="pinky_mcp_push_loop" body1="pinky_mcp_push_rod" body2="pinky_mcp" anchor="0 0.06185933 0" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <connect name="ring_mcp_push_loop" body1="ring_mcp_push_rod" body2="ring_mcp" anchor="0 0.0618637646 0" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <connect name="index_link_pip_loop" body1="index_link_pip" body2="index_pip" anchor="0 0.0324344884 0" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <connect name="index_link_dip_loop" body1="index_link_dip" body2="index_dip" anchor="0 0.0344244567 0" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <connect name="middle_link_pip_loop" body1="middle_link_pip" body2="middle_pip" anchor="0 0.0324344884 0" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <connect name="middle_link_dip_loop" body1="middle_link_dip" body2="middle_dip" anchor="0 0.0344244567 0" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <connect name="pinky_link_pip_loop" body1="pinky_link_pip" body2="pinky_pip" anchor="0 0.0324344884 0" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <connect name="pinky_link_dip_loop" body1="pinky_link_dip" body2="pinky_dip" anchor="0 0.0265009749 0" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <connect name="ring_link_pip_loop" body1="ring_link_pip" body2="ring_pip" anchor="0 0.0324344884 0" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <connect name="ring_link_dip_loop" body1="ring_link_dip" body2="ring_dip" anchor="0 0.0344244567 0" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <connect name="thumb_link_flex_a_loop" body1="thumb_link_flex_a_aim" body2="thumb_flex" anchor="0 0.0420112394 0" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <connect name="thumb_link_flex_b_loop" body1="thumb_link_flex_b_aim" body2="thumb_swing" anchor="0 0.0420112394 0" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <connect name="thumb_link_ip_a_loop" body1="thumb_link_ip_a_aim" body2="thumb_ip" anchor="0 0.0231215182 0" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <connect name="thumb_link_ip_b_loop" body1="thumb_link_ip_b_aim" body2="thumb_rot" anchor="0 0.0231215182 0" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+    <connect name="thumb_rot_drive_loop" body1="thumb_rot_drive" body2="thumb_rot" anchor="0 0.0395614286 0" solref="0.001 1" solimp="0.99 0.999 0.0001" />
+  </equality>
+  <contact>
+    <exclude body1="index_mcp" body2="index_pip" />
+    <exclude body1="index_mcp" body2="index_dip" />
+    <exclude body1="index_pip" body2="index_dip" />
+    <exclude body1="root" body2="index_mcp" />
+    <exclude body1="thumb_swing" body2="thumb_rot" />
+    <exclude body1="thumb_swing" body2="thumb_flex" />
+    <exclude body1="thumb_swing" body2="thumb_ip" />
+    <exclude body1="thumb_rot" body2="thumb_flex" />
+    <exclude body1="thumb_rot" body2="thumb_ip" />
+    <exclude body1="thumb_flex" body2="thumb_ip" />
+    <exclude body1="root" body2="thumb_swing" />
+    <exclude body1="root" body2="thumb_rot" />
+    <exclude body1="middle_mcp" body2="middle_pip" />
+    <exclude body1="middle_mcp" body2="middle_dip" />
+    <exclude body1="middle_pip" body2="middle_dip" />
+    <exclude body1="root" body2="middle_mcp" />
+    <exclude body1="ring_mcp" body2="ring_pip" />
+    <exclude body1="ring_mcp" body2="ring_dip" />
+    <exclude body1="ring_pip" body2="ring_dip" />
+    <exclude body1="root" body2="ring_mcp" />
+    <exclude body1="pinky_mcp" body2="pinky_pip" />
+    <exclude body1="pinky_mcp" body2="pinky_dip" />
+    <exclude body1="pinky_pip" body2="pinky_dip" />
+    <exclude body1="root" body2="pinky_mcp" />
+  </contact>
+</mujoco>

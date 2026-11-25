@@ -35,7 +35,7 @@ def test_clear_height_adapts_and_parks_from_a_corner():
 
 
 def test_no_clearance_at_all_is_reported():
-    high = sim.flat_screen(centre=(0.27, 0.05, 0.045))  # hover is still within reach, 1.5 x hover above it is not...
+    high = sim.flat_screen(centre=(0.27, 0.05, 0.035))  # hover is still within reach, 1.5 x hover above it is not...
     try:
         robot = TabletRobot(FakeArm(PARK), PEN, high, PARK, SEED, realtime=False)
     except Unreachable as exc:
