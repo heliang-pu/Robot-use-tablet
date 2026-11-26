@@ -1,377 +1,125 @@
-# tablet_tap：说一句话，机械臂用电容笔操作平板
+<div align="center">
 
-**演示**：打开音乐，播放音乐，切换下一首，暂停，退出（2026-11-24 真机录制，三路相机合成，点画面看高清原视频）
+# Robot-Use-Tablet (`tablet_tap`)
 
-<a href="docs/demo/tablet_demo_douyin.mp4"><img src="docs/demo/tablet_demo_v2.webp" width="400" alt="机械臂用电容笔操作平板的演示"></a>
+**A camera-only, voice- and text-controlled robotic arm system that operates an Android tablet with a 3D-printed compliant stylus — no ADB, no screen capture.**
 
-人说一句话（例如"打开音乐播放音乐"），松灵 PiPER 机械臂夹着电容笔在安卓平板上一步步点出来。
+English | [简体中文](README_CN.md) | [Full Operation Guide (中文上机手册)](docs/OPERATION_GUIDE.md)
 
-```
-麦克风 → 语音识别（SenseVoiceSmall）→ 文字指令
-相机拍平板 → 矫正成正视的整屏图 → GUI 智能体（GUI-Owl-1.5）→ 下一步动作（点 / 长按 / 滑动 / 返回 / 回桌面 / 结束）
-动作里的屏幕坐标 → 标定好的屏幕平面 → 逆运动学 → 机械臂点按 → 回停靠位 → 再拍一张，循环
-```
+[![Project Page](https://img.shields.io/badge/Project_Page-heliang--pu.github.io-1772d0)](https://heliang-pu.github.io/projects.html#tablet-tap)
+[![Python](https://img.shields.io/badge/Python-3.11-3776ab)](#)
+[![GUI Agent](https://img.shields.io/badge/GUI_Agent-GUI--Owl--1.5-orange)](#)
+[![Kinematics](https://img.shields.io/badge/Kinematics-Pinocchio%20%2B%20URDF-2ea44f)](#)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-运行时**只靠相机看屏幕**，不用 adb，也不从平板取截图。平板浏览器里的标定页只在标定和精度测试时用（它会把触点坐标发回电脑）。
+<br>
 
-> 状态（2026-11-23）：代码和离线测试已完成；GUI-Owl 8B 和 2B 都在 GPU 上加载过，在合成截图上跑通了智能体循环
-> （数字见"模型和附加说明怎么选"），语音服务用自带的示例音频验证过；**还没有在真机械臂上跑过，也没有用真实屏幕照片评测过模型**。
-> 真机第一次请按"上机步骤"一步步来，每一步都有人在急停旁边。
+<a href="docs/demo/tablet_tap_demo.mp4">
+  <img src="docs/demo/tablet_tap_demo.gif" width="760" alt="Real-robot three-camera demo of a PiPER arm operating an Android tablet with a stylus">
+</a>
 
-## 目录
+*Real-robot three-camera demo (4.5× preview; click image for full-speed 1280×720 [MP4](docs/demo/tablet_tap_demo.mp4)): spoken/typed instruction driving multi-step music playback control (open app → play → next track → pause → exit). Supports general open-ended Android tasks including tap, long-press, swipe, navigation, and on-screen keyboard typing.*
 
-| 路径 | 内容 |
-|---|---|
-| `tablet_tap/` | 程序本体，按层分成子包，见下面"代码结构" |
-| `tests/` | 离线测试（不连硬件、不用 GPU）：`bin/py -m pytest -q tests` |
-| `assets/CobotMagicArm/` | **机械臂的 URDF 和网格**（主办方的单臂模型；关节限位改成了真机固件里的值，别的原样；来源、限位对照和加载网格的方法见 `assets/SOURCE.md`）。运动学用 Pinocchio 在这个 URDF 上算 |
-| `third_party/robosyn/` | **PiPER 的控制代码**，从 RoboSynChallenge 原样拷来：`real_robot/hardware.py`（`PiperArm` 驱动）、`real_robot/conversions.py`（限位和安全过滤）、`reset_arms.py`（故障恢复）、`dock_switch.py`（正运动学）；来源和校验和见其中的 `SOURCE.md` |
-| `third_party/mobile_agent_v35/` | 上游 X-PLUG/MobileAgent（Mobile-Agent-v3.5）的参考代码，原样未改 |
-| `cad/` | 笔夹和平板支架：任务书、参数化建模脚本、`out/stl/` 打印文件、渲染图和视频 |
-| `scripts/` | 建环境（`setup_robot_env.sh`、`setup_vlm_env.sh`、`setup_asr_env.sh`）、起模型服务和语音服务、配置 CAN（`setup_piper_can.sh`）的脚本 |
-| `docs/bench_twin_params.json` | 台子的孪生仿真参数：三个相机 640×480 的内参、顶部相机位姿的估计值 |
-| `weights/` → `~/workspace/models/tablet_tap/` | GUI-Owl-1.5-8B / 2B-Instruct、SenseVoiceSmall、fsmn-vad |
-| `calib/` | 标定结果（`setup.json`、`screen_view.json`），每次覆盖前自动留备份 |
-| `runs/` | 每次运行的截图、标注图和动作记录 |
+</div>
 
-这个项目不依赖 RoboSynChallenge 仓库：机械臂这一侧的代码用 `bin/py` 运行，它是项目自己的环境 `venvs/robot`
-（`bash scripts/setup_robot_env.sh` 建；pyAgxArm 用松灵官方仓库里和台子上相同的那个提交，pyrealsense2 2.59.1，带 ArUco 的 OpenCV，Pinocchio 2.7.0）。
-模型服务和语音服务各有自己的环境（`venvs/vlm`、`venvs/asr`）。测试：`bin/py -m pytest -q tests`；格式检查：`venvs/robot/bin/ruff check tablet_tap tests`。
+---
 
-## 代码结构
+## System Overview
 
-依赖只允许从外层指向内层，`tests/test_architecture.py` 按 import 语句检查这一点：
+Given a spoken or typed natural-language instruction, an AgileX PiPER robotic arm holding a 3D-printed compliant capacitive stylus executes multi-step GUI interactions on an angled Android tablet using **cameras alone** (no ADB debugging and no digital screenshot API):
 
-```
-cli/  web/         前端：命令行（一条子命令一个类）、网页控制台
-   └─ app.py       装配层：按配置把机械臂、机器人、相机、标定页组装起来，用到才打开
-        ├─ calibration/   标定：平板上的标定页（服务 + 客户端）、键盘示教、自动探触、点按精度测试、标定板手眼标定
-        ├─ agent/         GUI 智能体：它眼里的"设备"接口、机器人实现、围绕 GUI-Owl 的循环
-        ├─ speech/        语音：录音客户端、识别服务
-        ├─ robot/         机械臂：接口 ArmIO、PiPER 实现、软件机械臂、轨迹执行、TabletRobot
-        ├─ vision/        视觉：相机接口和三种实现、标定页的版面、相机画面 → 整屏图
-        ├─ config.py      配置文件 calib/setup.json 的类型化对象 Setup 和读写它的 SetupStore
-        └─ core/          纯算法，不碰硬件和网络：正逆运动学（Pinocchio + URDF）、屏幕平面拟合、点按 / 滑动轨迹规划
-             └─ errors.py 全部自定义异常
+```text
+Microphone ──► ASR (SenseVoiceSmall) ──► Natural-Language Instruction
+                                                  │
+Wrist Camera (1100–1300 px rectified screen,      ▼
+optional two-view glare removal) ──► GUI Agent (GUI-Owl-1.5 via vLLM)
+Top Camera (coarse pose + bump guard)             │
+                                                  ▼
+Screen Coordinates (u, v) ──► Leave-One-Out Tap-Error Correction
+                          ──► Calibrated 3D Screen Plane ──► Pinocchio / URDF IK
+                          ──► Hover-Safe Trajectory + Perpendicular Press ──► Park & Repeat
 ```
 
-| 做法 | 在哪里 | 解决什么 |
-|---|---|---|
-| 接口 + 多个实现（端口与适配器） | `robot/arm.py` 的 `ArmIO` ← `PiperPenArm` / `FakeArm`；`vision/camera.py` 的 `Camera` ← RealSense / OpenCV / 文件；`agent/device.py` 的 `Device` ← `RobotTabletDevice` / `FakeDevice`；`calibration/page_client.py` 的 `TouchPage` ← `CalibClient` | 上层逻辑不认识具体硬件；测试和 `--fake` 换成软件实现即可 |
-| 工厂 | `robot/factory.py` 的 `open_arm(配置, ArmMode)`；`vision/camera.py` 的 `open_camera("realsense:…")` | "真机 / 只读 / 空跑 / 纯软件"四种模式集中在一处判断 |
-| 外观 | `robot/tablet_robot.py` 的 `TabletRobot` | 规划、执行、位置状态、安全检查收在一个对象后面，外面只调 `tap` / `swipe` / `to_park` |
-| 状态枚举 | `ArmPlace`（停靠 / 悬停 / 未知）、`ArmMode`、`ArmUse` | 不再用字符串和一串布尔值表示状态 |
-| 命令 + 注册表 | `cli/commands/`：每条子命令是一个 `Command` 子类，`@register` 登记，`cli/main.py` 只解析和分发 | 加一条子命令 = 加一个类，不用改入口 |
-| 模板方法 | `cli/commands/moves.py` 的 `Gesture`：确认、Ctrl-C、收尾停靠写一次，子类只写动作 | tap / swipe / home / back / hover 不重复同一套流程 |
-| 配置对象 + 仓储 | `config.py` 的 `Setup` / `SetupStore` | 取代到处传的字典；缺什么、拼错什么都有明确报错，覆盖前自动留备份 |
-| 统一异常体系 | `errors.py`；`cli/main.py` 里一张表把异常类型映射成退出码 | 库代码不再 `sys.exit`，也不再靠匹配报错文字区分情况 |
-| 装配层（依赖注入） | `app.py` 的 `AppContext` | 命令行和网页共用同一套组装；不需要机械臂的命令不会去连它 |
+---
 
-要扩展时：新的相机或机械臂 = 实现对应接口并在工厂里加一个分支；新的子命令 = 在 `cli/commands/` 加一个带 `@register` 的类并在该包的 `__init__.py` 里导入；新的子包要在 `tests/test_architecture.py` 的分层表里登记。
+## Key Features
 
-## 打印件
+- **Camera-Only Closed Loop (No ADB)**: Runtime perception relies solely on RealSense cameras. The wrist camera captures high-resolution screen views (1100–1300 px wide) with optional **two-view complementary glare removal**, while the top camera tracks tablet pose and halts execution if the tablet shifts (`> 5 mm` or `> 1.5°`).
+- **General Multi-Step GUI Control**: Supports tap, long-press, swipe, back/home navigation, and calibrated 26-key on-screen keyboard typing driven by **GUI-Owl-1.5 (8B / 2B)** and **SenseVoiceSmall** ASR.
+- **Classical Kinematics & Safety Guards**: Computes forward/inverse kinematics via **Pinocchio** on a firmware-calibrated PiPER URDF; enforces hover-plane transit (`15 mm` above screen), perpendicular normal presses, per-step and velocity limits (`0.04 rad` / `1.2 rad/s`), hover collision checks, force-limited grasping (`5 N`), and emergency fault recovery.
+- **Hand-Eye Calibration & Adaptive Error Compensation**: Supports checkerboard eye-to-hand calibration, 14-pose eye-in-hand wrist calibration, real-time ArUco pose tracking, and one-click automated probing with **leave-one-out model selection** (translation / linear / quadratic tap-error compensation).
+- **3D-Printed Compliant Tooling**: Parametric CAD (`cad/`) for a dual-flexure compliant stylus holder (`5 mm` axial travel, `~0.4 N/mm`) and an adjustable angled tablet stand (`12°–20°`).
+- **Clean Architecture, Web Console & Software Rehearsal**: Ports-and-adapters layered design enforced by `tests/test_architecture.py`; unified web console for calibration, command execution, voice input, and automatic 3-camera video recording; full-pipeline **hardware-free software rehearsal** (`tablet_tap.web.rehearsal`) with synthetic camera blur, joint backlash, and interactive UI simulation.
 
-文件在 `cad/out/stl/`，单位毫米，已按打印方向摆好：
+---
 
-| 文件 | 数量 | 说明 |
-|---|---|---|
-| `pen_holder.stl` | 1 | 笔夹，75 × 62 × 26 mm。推荐 PETG（簧片要反复弯），层高 0.2，至少 3 圈壁；朝下的指尖槽是 21–32 mm 的桥，可以只在那里加支撑 |
-| `stand_left.stl`、`stand_right.stl` | 各 1 | 托座，70 × 118 × 32 mm，底面朝下，无支撑，15 % 填充即可 |
-| `tie_bar.stl` | 2 | 连杆 200 × 12 × 5 mm，平躺打印 |
+## 3D-Printed Hardware (`cad/`)
 
-装配：
-- **笔夹**：笔尾朝后穿过夹持块中间的八边形通道（笔尾的小笔夹朝通道宽的一侧），笔身落进前面滑座的 V 槽，用两根扎带绑紧，
-  笔尖伸出滑座约 30 mm。夹爪张开，把夹持块放到两指之间，指尖落进上下两个定位槽里，再夹紧。立柱那一侧装在背离腕部相机的一边。
-- **支架**：两根连杆穿过两个托座，平板左下角、右下角分别靠住两边的挡沿和挡边，调好间距后可以从后端面各拧一颗 M3×8 自攻螺丝锁住后连杆。
+Ready-to-print STL files live in [`cad/out/stl/`](cad/out/stl/) alongside parametric generation and geometry verification scripts (`cad/build_parts.py`, `cad/check_parts.py`).
 
-三件事打印出来先确认：
-1. **指尖定位槽的尺寸取自仿真里的 V100 手指网格**（0.7 mm 间隙），没有在真手指上量过。放不进去就量一下指尖宽度告诉我。
-2. **笔径是从照片估的**（约 8–9 mm）。V 槽适用 7–10 mm；通道给 Ø10 的笔留了 1.3 mm。
-3. **导电**：笔装进塑料滑座后和夹爪、人体都绝缘，被动电容笔很可能不触发。不触发时用一小段铜箔胶带或细软线把笔杆接到夹爪的金属件上
-   （线要软，别妨碍滑座前后动）。
+| Compliant Stylus Holder (`pen_holder.stl`) | Angled Tablet Stand (`stand_left/right.stl`, `tie_bar.stl`) |
+| :---: | :---: |
+| <img src="cad/out/renders/A4_holder_assembly.png" width="340" alt="3D-printed compliant stylus holder assembly"> | <img src="cad/out/renders/B2_stand_assembly.png" width="380" alt="3D-printed angled tablet stand assembly"> |
+| `75 × 62 × 26 mm`, dual `0.8 mm` flexures providing `5 mm` axial press compliance | `70 × 118 × 32 mm` supports + two `200 mm` tie bars, 12°–20° incline |
 
-弹性行程：滑座靠两片 0.8 mm 簧片导向，可沿笔轴后退 5 mm（PLA 约 0.4 N/mm）。程序默认压到标定接触面以下 2.5 mm，所以下压深度差 ±1.5 mm 也能点到。
+---
 
-## 摆放
+## Measured Benchmarks
 
-- 平板放在拿笔那只机械臂的正前方，**屏幕中心距机械臂基座 24–36 cm**；屏幕中心比基座安装面高出不超过 5 cm（支架 + 平板约 3 cm，没问题）。
-  这是按"笔始终垂直于屏幕"算的可达范围：中心在 40 cm 处时最远的两个角就够不到了。标定结束时程序会打印可达性检查。
-- 相机能看到整块屏幕，且屏幕在画面里至少 700 px 宽（`view` 命令会报）。640×480 的策略相机分辨率不够，RealSense 请用 1280×720 或 1920×1080。
-  相机和支架在标定后都不能再动；动了就重做 `view`（相机）或 `probe`（支架）。
-- 屏幕不要正对灯：倾角的方向选到相机里看不见灯的反光为止。平板亮度调高、关掉自动亮度、自动旋转和息屏。
-- 安卓的导航方式：建议在设置里改成**三键导航**，然后把"返回""主页"两个键的屏幕坐标写进 `calib/setup.json` 的
-  `"nav": {"back": [u, v], "home": [u, v]}`；不设置时程序用全面屏手势（从左边缘内滑 = 返回，从底边上滑 = 回桌面），笔做边缘手势不如点按键可靠。
+- **Camera Calibration (Real Top Camera, 12 consecutive frames @ 72 cm)**: Checkerboard corner reprojection error **`0.11 px`**, plane-normal frame-to-frame repeatability **`0.02°`**.
+- **Wrist-Camera Screen Resolution**: Rectified tablet view width **`1100–1300 px`** (vs. `~455 px` from the top camera alone), enabling reliable icon and small-text grounding.
+- **GUI Agent Latency (vLLM, `--max-model-len 16384`)**:
+  - `GUI-Owl-1.5-2B`: **`~0.75 s / step`** (`~9 GiB` VRAM)
+  - `GUI-Owl-1.5-8B`: **`~1.5 s / step`** (`~22 GiB` VRAM)
+- **Automated Offline Test Suite**: Enforces strict layered imports (`tests/test_architecture.py`), IK/trajectory safety, calibration math, error correction, keyboard typing, web API, and recording pipelines without hardware (`TABLET_TAP_NO_HARDWARE=1`).
 
-## 上机步骤
+---
 
-会动机械臂的命令（`teach` 的点动、`probe`、`taptest`、`park`、`hover`、`tap`、`swipe`、`home`、`back`、`shot`、`run`）
-都要有人在急停旁边；每条命令第一次运动前会要求确认。`run_real.py` 之类的程序在运行时本程序拒绝发指令（两个程序会抢同一只手臂）。
-任何命令加 `--dry_run` 都只读取真实关节角、在软件里把动作走一遍；加 `--fake` 则完全不连硬件。
-设了环境变量 `TABLET_TAP_NO_HARDWARE=1` 的进程，命令行一律拒绝连接机械臂、监听 CAN 和打开真实相机（只有 `--fake` 和 `file:` 相机可用）；测试里始终设着它，写代码调试时也建议设上。
+## Repository Layout
+
+```text
+tablet_tap/
+  cli/  web/        CLI commands (command registry) & unified web console (/console, /run, /rec, /calib)
+  app.py            Dependency-injection container (AppContext) shared by CLI and web UI
+  calibration/      Browser touch-calibration page, eye-to-hand / eye-in-hand calibration, auto-probe, tap correction
+  agent/            Device abstraction & GUI-Owl-1.5 closed-loop agent + offline grounding evaluator
+  speech/           Microphone client & SenseVoiceSmall ASR service
+  robot/            ArmIO interface (PiperPenArm / FakeArm), TabletRobot facade, wrist-camera arm controller
+  vision/           Camera interface (RealSense / OpenCV / file), ArUco tracking, screen rectification, glare fusion
+  core/             Pure algorithms: Pinocchio IK/FK, plane fitting, trajectory planning, on-screen keyboard layout
+tests/              Hardware-free unit, architecture, web, and rehearsal tests
+cad/                Parametric CAD scripts, geometry checks, renders, and printable STLs (cad/out/stl/)
+assets/             Firmware-calibrated CobotMagic / PiPER single-arm URDF & meshes
+scripts/            Environment setup (robot / vlm / asr), vLLM & ASR launchers, CAN setup, status checks
+docs/               Detailed Chinese operation manual (OPERATION_GUIDE.md), bench twin params, demo videos
+```
+
+---
+
+## Quick Start (Try Without Hardware)
+
+You can run the full web console, test suite, and end-to-end software rehearsal completely offline without a physical robot or GPU:
 
 ```bash
-cd ~/workspace/tablet_tap
+# 1. Create the robot environment (Python 3.11, Pinocchio, OpenCV+ArUco, FastAPI)
+bash scripts/setup_robot_env.sh
 
-# 0. 起三个服务（各开一个终端）
-bin/py -m tablet_tap.calibration.page_server --host 0.0.0.0 --port 8801     # 标定页；平板浏览器打开 http://<电脑IP>:8801/calib 并点"进入全屏"
-bash scripts/serve_vlm.sh                                        # GUI-Owl（占 GPU，见下面"显存"）
-bash scripts/serve_asr.sh                                        # 语音识别（CPU）
+# 2. Run the offline unit & architecture test suite
+TABLET_TAP_NO_HARDWARE=1 bin/py -m pytest -q tests
 
-# 1. 只读检查：CAN 反馈是否正常（每秒约 200 个状态帧）、能读到关节角、没有别的程序在控制机械臂
-bin/py -m tablet_tap --channel can_r_follower status
-bin/py -m tablet_tap recover --status_only      # 两只从臂的状态和故障；去掉 --status_only 就是急停 / 碰撞后的恢复
+# 3. Launch the interactive software rehearsal bench in your browser
+bin/py -m tablet_tap.web.rehearsal --serve 8811 --llm scripted --slant 12 --park_j1 0.7
 
-# 2. 示教：键盘点动。先 G 张开夹爪、放好笔夹、g 夹紧；把手臂挪到相机视野外的高处按 p 记停靠位姿；
-#    然后把笔尖点动到屏幕上方 1–2 cm 按 z：手臂沿笔轴慢速下探，屏幕一报告触摸就停并自动记录，再抬起。
-#    四角附近和中间各做一次（至少 4 个点），q 结束并拟合
-bin/py -m tablet_tap teach
-
-# 3. 相机标定：手臂在停靠位姿，标定页显示 6 个 ArUco 码
-bin/py -m tablet_tap view            # 默认用顶部相机 1080p；换相机加 --camera realsense:<序列号>:<宽>x<高>
-
-# 4. 自动探触 20 个点，用它们重新拟合屏幕平面（比手点的准）；然后做点按精度测试
-bin/py -m tablet_tap probe
-bin/py -m tablet_tap taptest --repeat 2          # 结果在 runs/taptest_*.json；目标：落点偏差 ≤ 2 mm
-
-# 5. 单个动作试一下，再跑整条链路
-bin/py -m tablet_tap tap 0.5 0.5 --park
-bin/py -m tablet_tap shot                         # 看一眼智能体会看到的图：runs/shot.png
-bin/py -m tablet_tap run --instruction "打开音乐，播放音乐"
-bin/py -m tablet_tap run --loop                   # 语音：按回车开始说，再按回车结束
+# Or launch the calibration & control web console in fake-hardware mode
+bin/py -m tablet_tap.web.console --port 8801 --fake
 ```
 
-夹爪直接夹笔（没有带簧片的笔夹）时，第一条命令加上 `--press_mm 0.6 --tip_len_mm <笔尖超出指尖的毫米数>`，它们会记在 `calib/setup.json` 里。
-`teach` 也可以加 `--read_only`：程序不发指令，用拖动示教把笔带到屏幕上，触点同样自动记录。
-手臂停在未知位置（比如急停之后）时，其它命令会拒绝执行，先用 `park` 低速回停靠位姿（这条路径不做碰撞检查，看着走）。
-真机上的每次测试（标定残差、`taptest`、整链成功率）请在 RoboSynChallenge 的 `实验记录/` 里各记一份。
+For real-robot setup (vLLM model server, SenseVoiceSmall ASR server, CAN bus setup, wrist hand-eye calibration, one-click accuracy calibration, and safety procedures), see the complete step-by-step guide in [`docs/OPERATION_GUIDE.md`](docs/OPERATION_GUIDE.md).
 
-## 用标定板做手眼标定（平板换位置后不用重新手动示教）
+---
 
-有一块棋盘格标定板时，可以先标出相机在机械臂坐标系里的位置。之后平板每换一次位置，由相机看标定页直接估出屏幕平面，再让自动探触精修，省掉键盘示教那一步。
+## Author & Links
 
-```bash
-# 1. 一次性：标定板平放在"相机看得全、拿笔手臂够得到"的地方（四个最外侧角点离手臂基座水平不超过约 40 cm），手臂先让开
-bin/py -m tablet_tap --channel can_r_follower board          # 相机默认是顶部相机 1080p
-#    程序拍照、认出棋盘格，把四个最外侧的内角点编号 1–4 画在 calib/board_corners.jpg 上；
-#    然后进入键盘点动：按图上的编号顺序把笔尖依次放到这四个角点上，每个按 m 记录（够不到的按 n 跳过，至少 3 个），q 结束。
-#    最后它会用一句话说出算出来的相机位置，和实际相符再确认保存。
-
-# 2. 每次平板换了位置：平板打开标定页，手臂在停靠位
-bin/py -m tablet_tap place --screen_mm <屏幕发光区域的宽> <高>     # 由相机估计屏幕平面；尺寸只需给一次
-bin/py -m tablet_tap probe                                        # 精修（屏幕平面来自相机时，自动改成悬停 20 mm、最多探到估计面以下 3 mm）
-bin/py -m tablet_tap taptest --repeat 2
-```
-
-要点：
-- 台子上这块玻璃板是 12×9 格、格距 15 mm（11×8 个内角点），`board` 默认就按它算；换别的板时用 `--square_mm` 给格距（必须准，填错结果会整体缩放），格数会自动识别，也可以用 `--squares 12x9` 指定。图案在玻璃背面时加 `--glass_mm <玻璃厚度>`。
-- 点角点时屏幕不会报告触摸，接触靠人眼判断：靠近板面用 0.2 或 1 mm 的步长，眼睛平视笔尖。尽量只平移不转动笔。
-- 编号对错了角（整体转了 180°）在几何上看不出来，所以最后要你确认"相机在基座哪一侧、多高"这句话是否符合实际。
-- `board` 和 `place` 要用同一个相机、同一个分辨率；相机被碰动后要重做 `board`。
-- `place --check` 只比较不保存：平板没动过时，它报出的差值就是手眼标定的实际误差。
-- 在合成场景里（1080p、板离相机约 0.7 m，各 100 次）测得的"相机估出的屏幕四角误差"：点 4 个角点、各点偏 0.5 mm 时中位数 1.3 mm、95 % 在 2.6 mm 以内，各点偏 1 mm 时是 2.2 mm 和 5.2 mm；加 `--points 8`（四个角加四条边的中点）后分别是 1.1 / 2.0 mm 和 1.9 / 3.9 mm。所以它只当初值用，必须接 `probe`。这是模拟数字，真机上还没有测过。
-- 相机这一半在真实画面上核对过（2026-11-23，顶部相机 640×480，板离相机 72 cm，连续 12 帧）：角点重投影误差 0.11 px，两个平面解的误差比 18（倾角没有歧义），板面法线帧间重复性 0.02°。机械臂点角点那一半还没做。
-- `probe` 和 `taptest` 遇到机械臂够不到的网格点会跳过并报出来，不会中途停下。
-
-## 运动上的安全措施
-
-- 所有横向移动都在屏幕上方 15 mm 的悬停高度进行，只有正对目标点时才沿法线下压和抬起；从停靠位过来时先到屏幕中心上方的过渡高度（最高 60 mm，手腕够不到时逐级降到 30 mm）再垂直降下；回停靠位时先在悬停高度移到屏幕中心再升高。
-- 关节空间的移动会检查笔尖有没有在平板上方低于悬停高度经过，有就拒绝执行。
-- 轨迹起点必须是机械臂当前位置；目标一步超过 0.04 rad 不发送（不做静默截断）；关节速度超过 1.2 rad/s 的段会自动放慢。
-- 下压前等手臂到位再计按压时间；3 秒内到不了位（被挡住）就报错停下。
-- Ctrl-C：手臂停在当前位置并保持；再按一次强制退出。
-- 沿用 RoboSynChallenge 的 `PiperArm` 和 `SafetyFilter`：同样的故障检测；关节限位用的是这只手臂固件里的值（规划留 0.025 rad，驱动的钳位留 0.02 rad），
-  不是 RoboSynChallenge 里另一台机器人的。夹爪目标开度 0、力上限 5 N（夹住 21 mm 厚的夹持块）。
-
-## 已知的限制
-
-- 不能输入文字（智能体要打字时会停下并说明）；`open`（直接启动应用）改成"回桌面，让模型自己找图标点"。
-- 智能体连续三次点同一个位置会判定为"点了没反应"并停下；需要连点同一处的操作（比如连按音量 +）会被它拦住，可在代码里把 `stuck_clicks` 设为 0。
-- 上游的模型客户端不发送采样温度；模型自带的生成配置是采样的（temperature 0.6），起服务时要在服务端固定为 0 才可复现（见 `scripts/serve_vlm.sh`）。
-- 相机拍出来的屏幕图比真截图糊，模型的定位准确率会下降。离线测过一次（GUI-Owl-1.5-2B 在 CPU 上，3 个合成界面各 5 条单步指令，结果在 `runs/smoke_vlm_cpu/`）：原始截图 14/15；屏幕在相机画面里约 900 px 宽时 14/15；约 450 px 宽时 10/15，掉的主要是设置页那样的文字列表（5 条里只对 2 条，有 2 条模型改成了滑动去找），大图标的桌面和播放器界面基本不受影响（各 4/5）。8B 模型和真实相机画面都还没测过。
-- 用顶部相机看屏幕（当前的选择）：它在 1080p 下平板估计只有约 500 px 宽，接近上面 450 px 的情形，传感器最高也就 1080p。对策是把平板的"显示大小"和"字体大小"调到最大、演示时尽量走大图标的界面；还不够再考虑让相机离平板更近。
-
-## 模型和附加说明怎么选
-
-指令后面会附加一段说明，告诉模型这台设备没有 `open`、`type`、`key` 三种动作：`run --add_info zh|en|none|<一段文字>`，默认 `zh`
-（文字在 `tablet_tap/agent/gui_agent.py` 的 `ADD_INFO_ZH` / `ADD_INFO_EN`）。这段话的措辞会明显改变模型的动作，而且两个模型的反应不一样。
-
-2026-11-23 的测量：`tests/data/screens` 的 3 张合成截图各 5 条指令，原图和两种模拟相机画面（屏幕在画面里宽约 900 px / 450 px）各测一遍，
-每条只走一步，点在目标框里算命中。每格是"原图 / 900 px / 450 px"的命中数，满分各 15：
-
-| 附加说明 | 8B | 2B |
-|---|---|---|
-| `none`（不加） | 8 / 12 / 7，没命中的里面有 9 步是想用 `open` | 14 / 14 / 10 |
-| `zh`（默认） | 14 / 13 / 10 | 10 / 13 / 7 |
-| `en` | 还没测 | 14 / 13 / 10 |
-| 改之前的写法（"要打开应用，请先回到主屏幕，再点击它的图标"） | 13 / 10 / 7 | 10 / 7 / 6 |
-
-- 用 8B 时保持默认；用 2B 时加 `--add_info en`。改之前的写法会让模型在目标就在眼前时去按主屏幕键，已经换掉。
-- 速度和显存（vLLM，`--max-model-len 16384`）：8B 每步约 1.5 秒、占约 22 GiB；2B 每步约 0.75 秒、占约 9 GiB。
-- 这些是合成截图上的数字，每格只有 15 步，只能当方向看。相机标定好以后，用 `shot` 拍几张真实屏幕存成 `<名字>.png`，
-  旁边写一个 `<名字>.json` 标上目标框（格式见 `tablet_tap/agent/evaluate.py` 开头），再用同一条命令比较模型和说明。
-
-```bash
-# 先起好模型服务（占 GPU）：bash scripts/serve_vlm.sh -- --override-generation-config '{"temperature": 0}'
-bin/py -m tablet_tap.agent.evaluate --add_info zh en none                    # 原图
-bin/py -m tablet_tap.agent.evaluate --add_info zh en none --clean \
-    --variant "cam_a=runs/smoke_vlm_cpu/variants/{screen}__cam_a__rectified.png" \
-    --variant "cam_b=runs/smoke_vlm_cpu/variants/{screen}__cam_b__rectified.png"   # 加上两种模拟相机画面
-```
-
-结果在 `runs/eval_*/results.json`，每个用例的目录里有标了落点的 `step_01_anno.png`。
-
-## 网页运行页（输入或说一句指令）
-
-控制台和标定页同一个服务，多一个运行页：`http://<电脑地址>:8801/run`（控制台顶栏也有链接）。
-
-- **输入指令**：输入框打字，或点"用这台设备的麦克风说"（浏览器只在 https 或 localhost 下允许用麦克风，所以要么在机器人电脑上用 `http://localhost:8801/run` 打开，
-  要么用"用机器人电脑的麦克风说"，由机器人电脑录音），识别出的文字先填进输入框，勾上"说完直接执行"就立即执行。常用指令可以存成按钮。
-- **执行过程**：每一步的截图（标出点的位置）、模型说了什么、机械臂做了什么、各用多久；结束后用语音播报结果。右侧是实时的相机画面和矫正后的屏幕。
-- **停止**：右上角按钮或 Esc，和控制台共用同一个停止；手臂停在当前位置。运行中机械臂被占用，别的操作会被拒绝。
-- **开始前的检查**：缺什么（机械臂没连、相机没开、没标定、屏幕平面只是相机估计、模型服务没起）会列在输入框下面，缺了就不能执行。
-- **历史**：每次运行都在 `runs/<时间>/`，页面上能回看每一步。
-- **打字**：搜歌名之类要输入文字时，需要先标定一次屏幕键盘：平板上点开一个输入框让 26 键拼音键盘出来，在页面的"键盘标定"里按提示依次点 Q、P、A、L、Z、M、空格、退格的中心。
-  之后模型要打字时，机械臂会一个键一个键地点；中文打拼音，候选词由模型在下一步点选。没标定键盘时，需要打字的指令会停在"需要打字"。数字和标点还不会打。
-
-模型和语音服务要先起好（各开一个终端）：`bash scripts/serve_vlm.sh`、`bash scripts/serve_asr.sh`；页面只显示它们在不在线，不会替你启动。
-代码：`tablet_tap/web/run_page.py`（后端）、`web/static/run.html`（页面）、`core/keyboard.py`（键盘）；测试：`tests/test_web_run.py`、`tests/test_keyboard.py`。
-
-## 网页标定控制台
-
-不想在终端里按键盘做标定，可以全程在网页里做。控制台和平板的标定页是同一个服务：
-
-```bash
-cd ~/workspace/tablet_tap
-bin/py -m tablet_tap.web.console --port 8801        # 加 --fake 是模拟模式：软件机械臂 + 虚拟平板，不连硬件，可以先点着试
-```
-
-- 平板浏览器打开 `http://<电脑地址>:8801/calib` 并进入全屏；
-- 操作的人在电脑或手机上打开 `http://<电脑地址>:8801/console`。
-
-页面从上到下就是标定的顺序：
-
-1. **连接机械臂**：选左 / 右从臂。“只读”不发任何指令；“可运动”要先勾选“有人在急停旁边”。在这里填笔尖伸出长度和下压深度。
-2. **点动和记点**：按钮或键盘（W/S 前后、A/D 左右、R/F 上下、E/C 沿笔轴、I/K/J/L/U/O 转动、1–4 选步长）。
-   把笔尖挪到屏幕上方 1–2 cm 后按“下探记点”（Z）：慢速下探到屏幕报告触摸为止，自动记录并抬起。四角和中间各一次，再按“拟合屏幕平面”。
-3. **相机**：打开相机，按“相机标定”；桌面上贴的 AprilTag 的位置会一并记下，之后页面会显示它们相对标定时移动了多少像素。
-4. **自动探触和精度测试**：探触一个网格并重新拟合；点按精度测试给出落点偏差的统计，结果存到 `runs/taptest_*.json`。
-5. **单步动作**：回停靠位、到屏幕上方、点一下、回桌面、返回。勾上“点击图上的位置就让机械臂去点”后，直接在矫正后的屏幕图上点击即可。
-
-安全上的约定：
-- 右上角的**停止**（或空格 / Esc）随时有效：机械臂停在当前位置并保持。它不是急停，人仍然要在急停旁边。
-- 同一时间只执行一条指令；正在执行时发来的指令被拒绝，不排队，按住键盘也不会堆积运动。
-- `run_real` 等程序在运行时，“可运动”的连接会被拒绝。
-- 局域网里任何人都能打开这个页面；需要限制时启动时加 `--token <口令>`，网址后面带 `?token=<口令>`。
-
-代码在 `tablet_tap/web/`（`console.py` 后端、`static/console.html` 页面、`sim.py` 模拟台子），测试 `tests/test_web.py`。
-
-
-## 网页点按、一键校准和斜放的平板（2026-11-23）
-
-`http://<电脑>:8801/console`（旧的完整控制台在 `/console/full`）：
-
-1. **夹爪**：“松开 / 夹紧笔夹”。连接时夹爪开着（>35 mm）就保持不动，要夹紧得自己点；动过夹爪会清空修正。
-2. **平板位置**：相机看标定页的码实时跟踪（挪动、转动、换倾角都会跟上；≥4 个码能认出新的倾角，≥2 个码能跟踪平移）。
-   `cad/out/stand_tags_A4.pdf`（`bin/py scripts/make_stand_tags.py` 生成）打印后剪 2–4 个贴在支架上、和屏幕尽量同一平面：
-   标定页开着时自动记住它们，切到别的应用后用它们继续跟踪。
-3. **一键校准精度**：慢速找屏幕 9 点 → 正常点按 5×4 个点学习误差 → 另外随机 12 点检验（不参与学习），报告平均 / 95% / 最大和
-   ≤1 mm 的比例，存 `runs/tapcal_*.json`。没触发的点原地再试一次，连续 3 次不触发才停；
-   慢速阶段一个点都碰不到时，多半是相机把屏幕估高了（下探只到估计面以下 3 mm）：去掉“点完让开”，点一下屏幕中间，
-   再用“下”键一步步降到屏幕上出现圆点，控制台记下这个高度后再点一键校准。
-4. 误差修正（`calibration/tap_correction.py`）：每次正常点按的偏差按平移 / 线性 / 二次学习，用留一误差选阶数；所有点按
-   （包括指令执行）都用它。平板挪动超过 3 cm 或 4° 会清空，需要重新校准。
-5. 模拟里重复性（每个方向的随机散布）0.2 / 0.4 / 0.6 / 0.9 mm 时，校准后平均偏差 0.31 / 0.56 / 0.81 / 1.21 mm，
-   ≤1 mm 的比例 100 / 92 / 71 / 33 %。校准只能去掉固定的误差，随机散布要靠笔夹紧、笔垂直、导电可靠。
-
-**指令标签**（`/console` 的“指令”）：写提示词（可多行，最多 1000 字）、存常用、改“附加说明”、限步数，执行和停止，右边逐步显示画面、
-模型的想法和手臂的动作，下面是以前的记录。需要：左臂以“可运动”连接、相机打开、屏幕已校准、GUI-Owl 服务（8802）在跑；缺什么页面会写明。
-
-**一键入口（项目根目录）**：`./tablet.sh status | console | stop | restart | log`，就是下面两段的功能。手臂在示教模式、急停或碰撞后：网页“点按”页的“故障恢复”（不用断电；第一次用时扶住手臂）。
-
-**录像**：页面最上面标题旁勾“录制三路相机”，之后每次执行指令、点击、滑动、一键校准自动录（顶部 / 全景 / 左腕；两次操作隔 5 秒以内算同一段），停下后合成抖音竖屏 1080×1920。看和下载：`http://<电脑>:8801/rec`，文件在 `runs/videos/`。没有声音。
-
-**看整个台架的状态**：`scripts/status.py`（或 `scripts/console.sh status`）——CAN 报文、相机、控制台、标定、模型和语音、显卡，最后一段列出现在还缺什么。
-只看不碰，不发总线报文、不打开相机；手臂在动的时候也能随时跑（约 1 秒）。
-
-**启动和停止控制台**：`scripts/console.sh start | stop | restart | status`（日志 `runs/console.log`，会记下退出原因）。机械臂连着或正在
-执行时 `stop` 会拒绝。默认同时开 https 端口 8443：浏览器只在 https 下允许用麦克风，要说指令就用
-`https://<电脑>:8443/console`（自签证书，第一次点“高级 → 继续访问”）；“指令”标签里的“🎤 说”把话变成提示词。
-
-**执行中平板被挪动**：碰屏幕的任务进行时，相机连续 3 次看到平板离原位超过 5 mm 或 1.5° 就自动停下。
-
-**固件关节限位**：`bin/py -m tablet_tap limits` 查看；`limits --joint5_max 75` 改 5 号上限（70–75°）；`limits --restore` 写回改动前的值
-（记在 `calib/firmware_limits_<通道>.json`）。改动留在手臂固件里，对所有程序生效；有别的程序在用手臂或网页连着时拒绝写。
-**规划和驱动的钳位都按固件的限位走**：`limits` 每次读到的值按通道记进 `calib/setup.json`（`arm.firmware_limits_deg`），用哪只臂就按哪一行；
-没读过的臂先按 URDF 里的（左臂的：5 号 −70…75°，其余 ±150、0…180、−170…0、±100、±180）。两只臂 2026-11-23 都读过：右臂 5 号只到 70°。
-读另一只臂：`bin/py -m tablet_tap --channel can_r_follower limits`（只读，不会把拿笔的臂换成它）。
-两只臂控制器里的设置（关节限位、最大速度和加速度、末端速度和加速度、碰撞防护等级、助力等级）改动之前的值和现在的值都存在
-`docs/firmware_settings_20261123.json`，怎么恢复写在文件里。
-
-## 全流程排练（不连真机）
-
-```bash
-bin/py -m tablet_tap.web.rehearsal --slant 12 --park_j1 0.7 --llm scripted      # 一分钟左右，模型用替身
-venvs/vlm/bin/python scripts/serve_vlm_cpu.py --port 8822 &                      # GUI-Owl 2B，只用 CPU，每步约 30 秒
-bin/py -m tablet_tap.web.rehearsal --slant 12 --park_j1 0.7                      # 模型用上面那个服务
-bin/py -m tablet_tap.web.rehearsal --serve 8811 --llm scripted --slant 12 --park_j1 0.7   # 挂成网页，自己在浏览器里操作
-```
-
-`tablet_tap/web/rehearsal.py` 把控制台原样跑在一个软件台架上，从连接、夹紧、认平板、一键校准、点按、滑动、执行中被推开、
-切到安卓桌面、被碰动，到语音识别和执行指令走一遍，结果写进 `runs/rehearsal_<时间>/report.md`（每一步通过与否和数据、
-相机画面、模型看到的画面、每条指令的步骤）。它只读 `calib/setup.json`，不写它，也不碰任何硬件和显卡。
-
-- 真的：控制台、跟踪、慢速触点、误差修正、指令页、提示词和解析的全部代码；相机的内参、位姿和停靠位姿（取自
-  `calib/setup.json`）；语音服务；模型（`--llm server` 时）。
-- 假的：平板（标定页，或三屏的小安卓：桌面、播放器、设置，点了会变）；相机画面（按真实相机投影，手臂画成几根粗杆，
-  加模糊和噪声）；机械臂和它的误差（关节零位、笔尖偏心、每次点按的随机偏差、可选的回差和漏触发）。控制台拿到的相机位姿
-  和屏幕尺寸故意带一点误差（`--camera_error_deg/_mm`、`--size_error`）。
-- 常用的开关：`--slant` 支架倾角，`--height_mm` 屏幕高度，`--park_j1` 停靠位只改 1 号关节，`--scatter_mm`、`--backlash_mm`、
-  `--trigger_p` 机械臂和笔的毛病，`--quick` 跳过按真实速度走的那一步，`--serve 端口` 时 `/sim` 页可以切换平板画面和推平板。
-- 模拟不了的：笔的导电、笔斜着时在玻璃上打滑、笔夹受压变形、真实相机的清晰度和反光、真实应用的界面。
-
-## 腕部相机（顶部相机只做粗定位）
-
-顶部相机负责知道平板大概在哪、有没有被挪动；模型看的画面来自腕部相机（屏幕在画面里约 1100–1300 像素宽，顶部相机只有约 455）。
-点哪里仍然靠触点校准（“一键校准精度”），不靠相机。网页 `/console` 的“腕部相机”标签：
-
-| 按钮 | 做什么 | 之前要有 |
-|---|---|---|
-| ⓪ 用腕部相机找平板 | 顶部相机挪过或没标定时用：手臂抬到“平板应该在的位置”上方看一眼，按码算出平板位置（准到 1 cm 左右）；之后顶部相机暂时不参与 | 机械臂已连接、在停靠位；平板在左臂正前方约 32 cm，全屏标定页 |
-| ① 试算 | 只算看屏位和标定位姿，手臂不动 | 知道平板大概在哪（顶部相机或 ⓪） |
-| ② 标定腕部相机 | 手眼标定：低速走 14 个位姿拍标定页，笔不碰屏幕；结果存 `calib/wrist.json`。做完会用它核对顶部相机的位置：顶部相机位置未知时直接采用，已知时只报告差多少（④ 才改用） | 同上；手臂在停靠位 |
-| ③ 去看屏位拍画面 | 去看屏位拍一张，用六个码把画面对到屏幕上（`calib/wrist_view.json`） | 平板全屏标定页；最好先做完“一键校准精度” |
-| 指令用腕部相机看屏幕 | 打开后“指令”每一步都去看屏位用腕部相机看 | ② ③ 做过 |
-
-- **平板要放远一些**：中心离左臂底座 31–33 cm（再近，手腕转不过来，腕部相机退不到能看全屏幕的地方），放在 12°–20° 的斜支架上，
-  低的一边朝机械臂。这个距离点按也够得到。
-- 平板被碰动 8 mm / 2° 以内：看屏位的画面按顶部相机看到的挪动量跟着走，不用重拍；更大就要平板回到标定页重做 ③。
-- 灯的反光：③ 会量标定页暗处有多少发亮（超过 0.5% 或码没认全就提示）。“换一个角度再拍”换到离试过的角度最远的看屏位；
-  能看全屏幕的位姿不多，灯管正好在镜面方向时换角度也躲不开。这时点“从第二个角度再拍一张，两张互补”，再勾“看屏时两个角度合成”：
-  每次看屏幕走两个看屏位，第一张里被反光盖住的地方用第二张补（反光只会让画面变亮，而且换个位置看它就挪到别处）。每一步多走一趟，约多 5 秒。
-  两处反光重叠时补不干净，控制台会说，那就只能挡灯或挪平板。
-- 手眼标定时屏幕尺寸不参加拟合（用配置里的尺寸）：机械臂零位有零点几度误差时，放开尺寸会把屏幕拟合得偏大、偏远。
-- 命令行也有同一套（`bin/py -m tablet_tap wrist plan | calib | view | shot | run`，这时网页不能连着机械臂）。
-- 排练：`bin/py -m tablet_tap.web.rehearsal --wrist --slant 12 --dx_mm 75 --park_j1 0.7 --llm scripted`；顶部相机被挪过的情形把 `--wrist` 换成 `--top_moved`。
-- 代码：`core/look.py`（看屏位和标定位姿的规划、碰撞检查）、`calibration/eye_in_hand.py`（手眼标定）、`robot/wrist.py`（`calib/wrist.json`、看屏位的机械臂）、
-  `web/wrist_page.py`（网页入口）、`cli/commands/wrist.py`（命令行入口）。
-
-## 上机顺序：标定完就能操控平板
-
-准备（不动手臂）：笔杆接一根导线到大的导体上（不接，屏幕时灵时不灵）；支架上贴 2–4 个 `cad/out/stand_tags_A4.pdf` 里的码；
-平板放在左臂正前方、中心离底座 31–33 cm 的斜支架上（12°–20°，低的一边朝机械臂），浏览器全屏打开 `http://<电脑>:8801/calib`。
-控制台没开就 `scripts/console.sh start`，操作页 `http://<电脑>:8801/console`（要用麦克风说指令走 `https://<电脑>:8443/console`）。
-
-| 步 | 在哪 | 做什么 | 成了的样子 | 不成 |
-|---|---|---|---|---|
-| 1 | 点按 | 勾“有人能断电”→“连接”；扶住笔夹点“夹紧笔夹” | 右上角“平板 已识别 N 码” | 顶部相机挪过或认不出：到“腕部相机”点 ⓪ |
-| 2 | 腕部相机 | ② 标定腕部相机（约 2 分钟，盯着第一遍） | 日志“腕部手眼标定：…没参加拟合的位姿 x px”，离图纸 < 15 mm | “找不到看屏位”：平板再放远到 31–33 cm；“离图纸太远”：支架选对没有 |
-| 3 | 点按 | 一键校准精度（约 3 分钟） | “校准完成：…平均 x mm” | 一个点都碰不到：按提示用“下”键降到出现圆点再来；常不触发：查笔的导线 |
-| 4 | 腕部相机 | ③ 去看屏位拍画面，再勾“指令用腕部相机看屏幕” | 右边出现拉正的屏幕，约 1100 px 宽，六个码都认出 | 提示“有反光”（灯映在玻璃上，2026-11-23 真机照片里就有）：点“换一个角度再拍”；都试过了就把那盏灯挡住或关掉、或者挪一下平板 |
-| 5 | 平板 | 按主页键离开标定页；到“指令”页点“试主页键”“试返回键” | 平板回桌面 / 返回 | 位置不对：到“点按”页点一下那个键，回来“记成主页键 / 返回键”；没有三个键就点“平板是手势导航” |
-| 6 | 指令 | “启动模型”（占显卡约 24 GB，一两分钟）；写或说指令，“执行” | 右边一步一步出图 | 提前说“完成”：把指令写具体（“打开音乐，然后点击播放按钮”） |
-
-之后平板被碰动 8 mm 以内不用管；更大就回到标定页重做第 4 步。换了平板位置重做 3、4。用完在“指令”页“停止模型”让出显卡。
-
-**新支架没装好时的退路（只用顶部相机）**：原装支架上笔尖在腕部画面正中间，看不全屏幕，第 2、4 步做不了。改成：第 1 步后到“腕部相机”页最下面点
-“停靠位左转到 40°”（现在的停靠位会挡住顶部相机看屏幕左边约四分之一，转开就不挡；左边先清空），然后做第 3、5、6 步，不勾“指令用腕部相机看屏幕”。
-这时模型看到的屏幕只有约 455 像素宽，图标认得出，小字看不清。平板可以放近一些（中心离底座 24–33 cm 都行）。
+- **Author**: Heliang Pu ([heliang-pu.github.io](https://heliang-pu.github.io/))
+- **Related Project**: [ChainPlanner (`wam-long-horizon-planner`)](https://github.com/heliang-pu/wam-long-horizon-planner) — Long-horizon 2B VLM planner on top of a frozen multi-task World Action Model.
+- **License**: Released under the [MIT License](LICENSE). Third-party references retain their original notices in `third_party/`.
