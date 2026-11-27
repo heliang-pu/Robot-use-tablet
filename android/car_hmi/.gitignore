@@ -1,0 +1,4 @@
+build/
+debug.keystore
+# the user's own music files, added with import_music.py
+assets/www/music/
