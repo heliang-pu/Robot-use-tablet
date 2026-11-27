@@ -30,9 +30,18 @@ import requests
 
 from tablet_tap.agent.device import Device
 from tablet_tap.agent.device import FakeDevice
-from tablet_tap.agent.gui_agent import AgentResult
 
 log = logging.getLogger(__name__)
+
+
+@dataclasses.dataclass
+class AgentResult:
+    """与 tablet_tap.agent.gui_agent.AgentResult 字段同构，但无需引入 upstream/openai 依赖。"""
+
+    status: str
+    steps: int
+    answer: str = ""
+    run_dir: str = ""
 
 COORD_SCALE = 999.0
 
