@@ -113,7 +113,7 @@ class E2EMultiStepAgent:
         max_steps: int = 26,
         keep_last_images: int = 2,
         enable_thinking: bool = False,
-        max_tokens: int = 256,
+        max_tokens: int = 384,
         settle_s: float = 0.05,
     ) -> None:
         self.device = device
@@ -152,8 +152,11 @@ class E2EMultiStepAgent:
         clicks = 0
         llm_calls = 0
         events: list[dict[str, Any]] = []
-        screenshots_b64: list[str] = [img_to_b64(self.device.screenshot())]
+        cur_img = self.device.screenshot()
+        screenshots_b64: list[str] = [img_to_b64(cur_img)]
         assistant_turns: list[str] = []
+        last_clicks: list[tuple[float, float]] = []
+        stuck_notices: dict[int, str] = {}
 
         for step in range(self.max_steps):
             msgs = build_multistep_messages(
@@ -162,6 +165,8 @@ class E2EMultiStepAgent:
                 assistant_turns,
                 keep_last_images=self.keep_last_images,
             )
+            if step in stuck_notices:
+                msgs[-1]["content"].append({"type": "text", "text": stuck_notices[step]})
             try:
                 raw = self._call(msgs)
             except Exception as exc:
@@ -225,8 +230,19 @@ class E2EMultiStepAgent:
 
             if self.settle_s > 0:
                 time.sleep(self.settle_s)
+            nxt_img = self.device.screenshot()
+            if atype in ("click", "double_click", "long_press") and isinstance(act.get("coordinate"), (list, tuple)) and len(act["coordinate"]) == 2:
+                cx, cy = float(act["coordinate"][0]), float(act["coordinate"][1])
+                fdiff = cra._img_diff(cur_img, nxt_img)
+                rdiff = cra._roi_diff(cur_img, nxt_img, max(0.0, min(1.0, cx / COORD_SCALE)), max(0.0, min(1.0, cy / COORD_SCALE)), radius=80)
+                if fdiff < 0.15 and rdiff < 0.8 and last_clicks and abs(cx - last_clicks[-1][0]) < 25 and abs(cy - last_clicks[-1][1]) < 25:
+                    stuck_notices[step + 1] = "[视觉提示：连续两次点击同一位置画面毫无变化，说明可能已在目标页面/已达边界或坐标偏了，请勿重复点这里，观察当前画面换其他动作！]"
+                last_clicks.append((cx, cy))
+            else:
+                last_clicks.clear()
+            cur_img = nxt_img
             assistant_turns.append(raw.strip())
-            screenshots_b64.append(img_to_b64(self.device.screenshot()))
+            screenshots_b64.append(img_to_b64(cur_img))
 
         return cra.ReactiveRunLog(instruction, "max_steps", [], events, clicks, llm_calls, round(time.monotonic() - t0, 2), f"exceeded {self.max_steps} steps")
 
@@ -240,7 +256,7 @@ def main() -> None:
     ap.add_argument("--only", default="")
     ap.add_argument("--max-steps", type=int, default=26)
     ap.add_argument("--enable-thinking", action="store_true")
-    ap.add_argument("--max-tokens", type=int, default=256)
+    ap.add_argument("--max-tokens", type=int, default=384)
     ap.add_argument("--label", required=True)
     ap.add_argument("--out", default=str(HERE / "results"))
     a = ap.parse_args()

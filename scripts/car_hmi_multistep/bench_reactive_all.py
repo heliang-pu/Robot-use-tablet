@@ -232,11 +232,14 @@ def main() -> None:
 
     std_r = [r for r in results if r["id"].startswith("T")]
     cor_r = [r for r in results if r["id"].startswith("C")]
-    print(f"\n=== [{a.label}] TOTAL: {sum(r["ok"] for r in results)}/{len(results)} ({100*sum(r["ok"] for r in results)/max(1,len(results)):.1f}%)  wall={time.monotonic()-t_all:.0f}s ===")
+    n_ok = sum(r["ok"] for r in results)
+    print(f"\n=== [{a.label}] TOTAL: {n_ok}/{len(results)} ({100*n_ok/max(1,len(results)):.1f}%)  wall={time.monotonic()-t_all:.0f}s ===")
     if std_r:
-        print(f"  Standard T01-T20: {sum(r["ok"] for r in std_r)}/{len(std_r)} ({100*sum(r["ok"] for r in std_r)/len(std_r):.1f}%)")
+        std_ok = sum(r["ok"] for r in std_r)
+        print(f"  Standard T01-T20: {std_ok}/{len(std_r)} ({100*std_ok/len(std_r):.1f}%)")
     if cor_r:
-        print(f"  Corner   C01-C10: {sum(r["ok"] for r in cor_r)}/{len(cor_r)} ({100*sum(r["ok"] for r in cor_r)/len(cor_r):.1f}%)")
+        cor_ok = sum(r["ok"] for r in cor_r)
+        print(f"  Corner   C01-C10: {cor_ok}/{len(cor_r)} ({100*cor_ok/len(cor_r):.1f}%)")
     out_path = out / f"{a.label}.jsonl"
     out_path.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in results), encoding="utf-8")
     print("saved ->", out_path)

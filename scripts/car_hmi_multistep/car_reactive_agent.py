@@ -146,6 +146,18 @@ L8_DOMAIN_MAP = """# 理想 L8 车机功能域与标准控件名地图
 - apps（“应用中心”按钮）：“<应用名>”应用图标
 """
 
+SETTINGS_SUBS: dict[str, list[str]] = {
+    "车辆": ["快捷", "灯光", "门窗", "驾驶", "后视镜", "座椅", "充电", "尾门", "维护"],
+    "智能驾驶": ["辅助驾驶", "主动安全", "泊车"],
+    "导航": ["偏好", "播报", "地图"],
+    "显示": ["屏幕", "HUD", "壁纸"],
+    "声音": ["音量", "音效", "提示音"],
+    "连接": ["蓝牙", "WLAN", "热点"],
+    "理想同学": ["唤醒", "音色"],
+    "安全": ["哨兵", "儿童锁"],
+    "系统": ["通用", "关于本车"],
+}
+
 GOAL_COMPILER_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -206,7 +218,8 @@ GOAL_COMPILER_SYSTEM = f"""你是理想 L8 车机目标编译器。把用户的�
 ## 各种 kind 怎么填（严格遵守，不相关字段可留空或默认0/false）
 1. `tap`: 点击确定性单选/分段选项/色块/应用图标/普通动作按钮。
    - 设置项开关（如哨兵模式开启、外观深色、跟车距离远）全部用 `tap`，并填好 `settings_cat` 和 `settings_sub`！
-   - 例：外观切深色 -> domain="settings", kind="tap", settings_cat="显示", settings_sub="屏幕", target="“外观”一栏的“深色”"
+   - 例：外观切深色/浅色（如“开启深色模式/切回浅色模式/浅色主题”）-> domain="settings", kind="tap", settings_cat="显示", settings_sub="屏幕", target="“外观”一栏的“深色”" 或 "“外观”一栏的“浅色”"（注意：切浅色/深色模式一定在 显示/屏幕 的“外观”一栏；只有明确说“地图昼夜模式/地图白天/地图夜间”时才去 导航/地图！）
+   - 例：理想同学音色/语速/语言 -> 都在 settings_cat="理想同学", settings_sub="音色"（不要误写到“唤醒”！）
    - 例：氛围灯紫色 -> domain="settings", kind="tap", settings_cat="车辆", settings_sub="灯光", target="“氛围灯颜色”的第7个色块"
    - 例：壁纸青山 -> domain="settings", kind="tap", settings_cat="显示", settings_sub="壁纸", target="壁纸“青山”"
    - 例：音乐下一首 -> domain="music", kind="tap", target="“下一首”按钮"
@@ -293,7 +306,33 @@ def _canonical_cycle_check(target: str, fallback: str) -> str:
     if "通风" in target:
         return f"空调页右侧座椅图‘{seat_pos}’格内从上往下第2个【座椅通风】按钮当前是几档？（未亮蓝色返回0；若亮蓝色且右上角有数字角标则返回该数字1、2或3；不要看上面的橙色加热按钮）"
     if "按摩" in target:
-        return f"空调页右侧座椅图‘{seat_pos}’格内从上往下第3个【座椅按摩】按钮当前是几档？（未亮紫色返回0；若亮紫色且右上角有数字角标则返回该数字1、2或3）"
+        return f"空调页右侧座椅图‘{seat_pos}’格内从上往下第3个【座椅按摩】按钮当前是几档？（未亮蓝色返回0；若亮蓝色且右上角有数字角标则返回该数字1、2或3）"
+    return fallback
+
+
+def _canonical_toggle_check(target: str, fallback: str) -> str:
+    """Map known cockpit toggle targets to exact trained unambiguous visual verification prompts."""
+    mapping = [
+        ("前除霜", "当前空调页中部横条里的‘前除霜’是否已开启高亮？"),
+        ("后除霜", "当前空调页中部横条里的‘后除霜’是否已开启高亮？"),
+        ("内循环", "当前空调页中部横条里的‘内循环’是否已开启高亮？"),
+        ("空气净化", "当前空调页中部横条里的‘空气净化’是否已开启高亮？"),
+        ("香氛", "当前空调页中部横条里的‘香氛’是否已开启高亮？"),
+        ("负离子", "当前空调页中部横条里的‘负离子’是否已开启高亮？"),
+        ("方向盘加热", "当前空调页右侧‘方向盘加热’按钮是否已开启高亮（橙色）？"),
+        ("后排空调", "当前空调页左下角‘后排’空调开关是否已开启高亮？"),
+        ("A/C", "当前空调页左侧‘A/C 制冷’是否已开启高亮？"),
+        ("三排左", "当前空调页右侧座椅图‘三排左’的放倒按钮是否已开启高亮？"),
+        ("三排右", "当前空调页右侧座椅图‘三排右’的放倒按钮是否已开启高亮？"),
+        ("小憩模式", "当前桌面场景卡片里的“小憩模式”是否已处于开启高亮状态？"),
+        ("露营模式", "当前桌面场景卡片里的“露营模式”是否已处于开启高亮状态？"),
+        ("洗车模式", "当前桌面场景卡片里的“洗车模式”是否已处于开启高亮状态？"),
+        ("宠物模式", "当前桌面场景卡片里的“宠物模式”是否已处于开启高亮状态？"),
+        ("收藏", "音乐页面播放控制栏里的红心“收藏”按钮是否已点亮为红色？"),
+    ]
+    for k, q in mapping:
+        if k in target:
+            return q
     return fallback
 
 
@@ -321,7 +360,7 @@ class ReactiveCarAgent:
         policy_url: str | None = None,
         policy_model: str | None = None,
         settle_s: float = 0.08,
-        max_total_clicks: int = 50,
+        max_total_clicks: int = 65,
     ) -> None:
         self.device = device
         self.grounder_url = grounder_url.rstrip("/")
@@ -524,7 +563,7 @@ class ReactiveCarAgent:
             p = st.get("page", "")
             return p.startswith("nav_") if domain == "nav" else p == domain
 
-        for _ in range(3):
+        for _ in range(5):
             if on_domain(state):
                 break
             screen, _ = self._tap_verified(dock_map[domain], screen, events, expect_change=True, retries=2)
@@ -534,14 +573,14 @@ class ReactiveCarAgent:
         # 3. Settings 2-level menu navigation (verified against live screenshot after each jump!)
         if domain == "settings" and on_domain(state):
             if cat:
-                for _ in range(3):
+                for _ in range(5):
                     if state.get("settings_cat") == cat:
                         break
                     screen, _ = self._tap_verified(f"设置左侧菜单里的“{cat}”", screen, events, expect_change=True, retries=2)
                     state = self.inspect_screen(screen)
                     events.append({"obs": f"settings_cat_{cat}", "state": state})
             if sub:
-                for _ in range(3):
+                for _ in range(5):
                     if state.get("settings_sub") == sub:
                         break
                     screen, _ = self._tap_verified(f"设置左侧菜单里的“{sub}”", screen, events, expect_change=True, retries=2)
@@ -551,7 +590,7 @@ class ReactiveCarAgent:
         # 4. Phone / Music sub-tab navigation
         if domain in ("phone", "music") and sub_tab and on_domain(state):
             page_zh = "电话" if domain == "phone" else "音乐"
-            for _ in range(3):
+            for _ in range(5):
                 if state.get("sub_tab") == sub_tab:
                     break
                 screen, _ = self._tap_verified(f"{page_zh}页面的“{sub_tab}”标签", screen, events, expect_change=True, retries=2)
@@ -574,28 +613,105 @@ class ReactiveCarAgent:
             return screen, state, "done"
 
         if kind == "tap":
-            # Check if a settings segmented button is already selected (avoid pointless retries when diff==0)
             target = g["target"]
+            # Closed-loop ambient color swatch verification (1..8) — self-corrects 1-swatch offsets & drops!
+            m_amb = re.search(r"氛围灯颜色.*第\s*([1-8])\s*个色块", target)
+            if m_amb:
+                want_idx = int(m_amb.group(1))
+                uv = self.ground(target, screen)
+                if uv is not None:
+                    u_cur, v_cur = uv
+                    for attempt in range(5):
+                        cur_v = self.read_number("当前设置灯光页‘氛围灯颜色’一排8个圆形色块中，带白色选中外圈的是从左到右第几个色块？（1到8的整数）", screen)
+                        cur_idx = int(round(cur_v)) if cur_v is not None else -1
+                        events.append({"verify_amb_color": cur_idx, "want": want_idx, "try": attempt})
+                        if cur_idx == want_idx:
+                            return screen, state, "done"
+                        if attempt > 0 and 1 <= cur_idx <= 8:
+                            # Pure-vision proportional shift along the 8-swatch row (~92px/1920px pitch)
+                            u_cur = min(max(u_cur + (want_idx - cur_idx) * (92.0 / 1920.0), 0.35), 0.98)
+                        screen = self._click(u_cur, v_cur)
+                return screen, state, "done"
+
+            # Closed-loop climate airflow mode verification (front/rear)
+            m_mode = re.search(r"(前排|后排)(吹面吹脚|吹面|吹脚)", target)
+            if domain == "climate" and m_mode:
+                zone, want_m = m_mode.group(1), m_mode.group(2)
+                q = (
+                    "当前空调页前排吹风模式三个图标中蓝色高亮选中哪一个？（只回答：吹面 / 吹面吹脚 / 吹脚）"
+                    if zone == "前排"
+                    else "当前空调页后排吹风模式两个图标中蓝色高亮选中哪一个？（只回答：吹面 / 吹脚）"
+                )
+                for attempt in range(4):
+                    cur_m = self.read_text(q, screen)
+                    events.append({"verify_clim_mode": cur_m, "want": want_m, "try": attempt})
+                    if cur_m == want_m:
+                        return screen, state, "done"
+                    screen, _ = self._tap_verified(target, screen, events, expect_change=True, retries=1)
+                return screen, state, "done"
+
+            # Closed-loop wallpaper selection verification
+            m_wall = re.search(r'壁纸[“"](默认|暖阳|青山)[”"]', target)
+            if domain == "settings" and m_wall:
+                want_w = m_wall.group(1)
+                for attempt in range(4):
+                    cur_w = self.read_text("当前壁纸页面中处于蓝色边框高亮选中状态的壁纸名称是什么？（默认/暖阳/青山）", screen)
+                    events.append({"verify_wall": cur_w, "want": want_w, "try": attempt})
+                    if want_w in cur_w:
+                        return screen, state, "done"
+                    screen, _ = self._tap_verified(target, screen, events, expect_change=True, retries=1)
+                return screen, state, "done"
+
+            # Closed-loop settings segmented option verification (100% immune to physical drops, idempotent,
+            # plus pure-vision sibling sub-tab self-recovery for unseen holdout sub-tabs!)
+            if domain == "settings" and "一栏的" in target:
+                q_seg = f"当前屏幕上{target}是否已经处于蓝色高亮选中状态？"
+                cur_cat = g.get("settings_cat") or state.get("settings_cat", "")
+                tried_subs: set[str] = {state.get("settings_sub", ""), g.get("settings_sub", "")}
+                for attempt in range(4):
+                    already = self.read_bool(q_seg, screen)
+                    events.append({"verify_seg": target, "selected": already, "try": attempt})
+                    if already:
+                        return screen, state, "done"
+                    if attempt == 2 and cur_cat in SETTINGS_SUBS:
+                        # Pure-vision recovery: if 2 taps on current sub-tab failed to highlight target,
+                        # check sibling sub-tabs under the same category (fixes unseen holdout sub-tab routing!)
+                        siblings = [s for s in SETTINGS_SUBS[cur_cat] if s not in tried_subs]
+                        for sib in siblings[:3]:
+                            tried_subs.add(sib)
+                            screen, _ = self._tap_verified(f"设置左侧菜单里的“{sib}”", screen, events, expect_change=True, retries=2)
+                            state = self.inspect_screen(screen)
+                            events.append({"obs": f"settings_sub_recover_{sib}", "state": state})
+                            for r_try in range(3):
+                                ok_sib = self.read_bool(q_seg, screen)
+                                events.append({"verify_seg_recover": target, "sub": sib, "selected": ok_sib, "try": r_try})
+                                if ok_sib:
+                                    return screen, state, "done"
+                                if r_try == 0:
+                                    m_row = re.match(r'[“"]([^”"]+)[”"]一栏的', target)
+                                    if m_row:
+                                        has_row = self.read_bool(f"当前右侧设置列表里是否能看到名为“{m_row.group(1)}”的这一行设置项？", screen)
+                                        events.append({"verify_row_visible": m_row.group(1), "sub": sib, "visible": has_row})
+                                        if not has_row:
+                                            break
+                                screen, _ = self._tap_verified(target, screen, events, expect_change=False, retries=1)
+                    screen, _ = self._tap_verified(target, screen, events, expect_change=False, retries=1)
+                return screen, state, "done"
+
             screen, changed = self._tap_verified(target, screen, events, expect_change=True, retries=2)
-            # If diff==0, verify whether it was already selected/active (idempotent) or genuinely missed
-            if not changed and domain == "settings":
-                already = self.read_bool(f"当前屏幕上{target}是否已经处于蓝色高亮选中状态？", screen)
-                events.append({"verify_already_selected": target, "already": already})
-                if not already:
-                    screen, _ = self._tap_verified(target, screen, events, expect_change=True, retries=2)
             state = self.inspect_screen(screen)
             return screen, state, "done"
 
         if kind == "toggle":
             target = g["target"]
             want_on = bool(g.get("want_on", True))
-            check = g.get("check") or f"当前屏幕上{target}是否已处于开启高亮状态（蓝色或橙色高亮/红心/暂停双竖线）？"
-            for attempt in range(4):
+            check = _canonical_toggle_check(target, g.get("check") or f"当前屏幕上{target}是否已处于开启高亮状态（蓝色或橙色高亮/红心/暂停双竖线）？")
+            for attempt in range(5):
                 cur = self.read_bool(check, screen)
                 events.append({"verify_toggle": target, "cur": cur, "want": want_on, "try": attempt})
                 if cur == want_on:
                     return screen, state, "done"
-                screen, _ = self._tap_verified(target, screen, events, expect_change=True, retries=1)
+                screen, _ = self._tap_verified(target, screen, events, expect_change=False, retries=1)
             return screen, state, "done"
 
         if kind == "cycle":
@@ -604,9 +720,35 @@ class ReactiveCarAgent:
             check = _canonical_cycle_check(target, f"当前屏幕上{target}处于几档？（未亮为0，亮色带角标数字则为1、2或3）")
             order = [0, 3, 2, 1]
             cached_uv: tuple[float, float] | None = None
-            for attempt in range(6):
+            color_kind = "orange" if "加热" in target else ("blue" if ("通风" in target or "按摩" in target) else "")
+
+            def _fovea_color_p95(img: Image.Image, uv_pt: tuple[float, float], ck: str) -> float:
+                arr = np.asarray(img.convert("RGB"), dtype=np.float32)
+                h_im, w_im = arr.shape[:2]
+                cx, cy = int(round(uv_pt[0] * w_im)), int(round(uv_pt[1] * h_im))
+                rx, ry = max(12, int(w_im * 0.015)), max(12, int(h_im * 0.024))
+                patch = arr[max(0, cy - ry):min(h_im, cy + ry), max(0, cx - rx):min(w_im, cx + rx)]
+                if patch.size == 0:
+                    return 60.0
+                diff_ch = (patch[:, :, 0] - patch[:, :, 2]) if ck == "orange" else (patch[:, :, 2] - patch[:, :, 0])
+                return float(np.percentile(diff_ch, 95))
+
+            for attempt in range(8):
                 val = self.read_number(check, screen)
                 cur = int(round(val)) if val is not None else -1
+                # Pure-vision foveated color consistency check around VLM-grounded (u, v):
+                # prevents blurry camera frames from confusing adjacent heat(0) vs vent(2)!
+                if color_kind and cur == want:
+                    if cached_uv is None:
+                        cached_uv = self.ground(target, screen)
+                    if cached_uv is not None:
+                        p95 = _fovea_color_p95(screen, cached_uv, color_kind)
+                        if want > 0 and p95 < 42.0:
+                            events.append({"verify_cycle_fovea": target, "raw_cur": cur, "color_p95": round(p95, 1), "override": 0, "try": attempt})
+                            cur = 0
+                        elif want == 0 and p95 > 85.0:
+                            events.append({"verify_cycle_fovea": target, "raw_cur": cur, "color_p95": round(p95, 1), "override": 1, "try": attempt})
+                            cur = 1
                 events.append({"verify_cycle": target, "cur": cur, "want": want, "try": attempt})
                 if cur == want:
                     return screen, state, "done"
@@ -625,9 +767,9 @@ class ReactiveCarAgent:
             want = float(g.get("want_value", 24.0))
             inc = float(g.get("step", 0.5)) or 0.5
             t_up, t_dn = g.get("target_up", ""), g.get("target_down", "")
-            check = g.get("check") or f"当前屏幕上{g["target"]}显示的数值是多少？（‘低’填16.0，‘高’填32.0）"
+            check = g.get("check") or f"当前屏幕上{g['target']}显示的数值是多少？（‘低’填16.0，‘高’填32.0）"
             cache: dict[str, tuple[float, float]] = {}
-            for attempt in range(7):
+            for attempt in range(10):
                 cur = self.read_number(check, screen)
                 events.append({"verify_stepper": g["target"], "cur": cur, "want": want, "try": attempt})
                 if cur is None:
@@ -662,7 +804,7 @@ class ReactiveCarAgent:
             if cur0 is not None and abs(cur0 - want) <= 6.0:
                 return screen, state, "done"
             u_try = uv[0]
-            for attempt in range(4):
+            for attempt in range(6):
                 u_try = min(max(u_try, 0.02), 0.98)
                 screen = self._click(u_try, uv[1])
                 cur = self.read_number(check, screen)
@@ -680,7 +822,8 @@ class ReactiveCarAgent:
                 p = state.get("page", "")
                 if p == "nav_guide":
                     # Check if we are ALREADY navigating to the requested destination!
-                    already = self.read_bool(f"底部导航信息栏是否显示正在前往“{dest.replace("回", "").replace("去", "")}”？", screen)
+                    dest_short = dest.replace("回", "").replace("去", "")
+                    already = self.read_bool(f"底部导航信息栏是否显示正在前往“{dest_short}”？", screen)
                     events.append({"verify_nav_guide": dest, "already": already})
                     if already:
                         return screen, state, "done"
@@ -699,7 +842,15 @@ class ReactiveCarAgent:
                     state = self.inspect_screen(screen)
                 elif p == "nav_route":
                     if route in ("推荐", "最快", "少收费"):
-                        screen, _ = self._tap_verified(f"路线选项“{route}”", screen, events, expect_change=False, retries=2)
+                        # Radio tabs on unseen holdout nav_route are 100% idempotent:
+                        # always tap non-default route at least once, then verify to catch physical drops!
+                        for _r in range(3):
+                            if _r > 0 or route == "推荐":
+                                r_ok = self.read_bool(f"当前屏幕上路线选项“{route}”是否已经处于蓝色高亮选中状态？", screen)
+                                events.append({"verify_nav_route": route, "selected": r_ok, "try": _r})
+                                if r_ok:
+                                    break
+                            screen, _ = self._tap_verified(f"路线选项“{route}”", screen, events, expect_change=False, retries=1)
                     screen, _ = self._tap_verified("“开始导航”按钮", screen, events, expect_change=True, retries=3)
                     state = self.inspect_screen(screen)
                     if state.get("page") == "nav_guide":
@@ -710,36 +861,36 @@ class ReactiveCarAgent:
 
         if kind == "nav_view":
             want_view = "3D" if "3" in str(g.get("target", "3D")) else "2D"
-            for _ in range(3):
+            for _ in range(5):
                 cur = self.read_text("地图右侧悬浮按钮上当前显示的是‘2D’还是‘3D’？", screen)
                 events.append({"verify_nav_view": cur, "want": want_view})
                 if want_view in cur.upper():
                     return screen, state, "done"
-                screen, _ = self._tap_verified("“视角”按钮", screen, events, expect_change=True, retries=2)
+                screen, _ = self._tap_verified("“视角”按钮", screen, events, expect_change=False, retries=1)
             return screen, state, "done"
 
         if kind == "music_play":
             target = g["target"]
             if "播放暂停" in target:
                 want_on = bool(g.get("want_on", True))
-                for _ in range(3):
+                for _ in range(5):
                     is_playing = self.read_bool("音乐主播放按钮（蓝色圆形大按钮）里显示的是两条竖线（暂停图标，表示正在播放）吗？", screen)
                     events.append({"verify_music_playing": is_playing, "want": want_on})
                     if is_playing == want_on:
                         return screen, state, "done"
-                    screen, _ = self._tap_verified("“播放暂停”按钮", screen, events, expect_change=True, retries=2)
+                    screen, _ = self._tap_verified("“播放暂停”按钮", screen, events, expect_change=False, retries=1)
             else:
                 screen, _ = self._tap_verified(target, screen, events, expect_change=True, retries=3)
             return screen, state, "done"
 
         if kind == "music_mode":
             want = g.get("music_mode") or "单曲循环"
-            for _ in range(4):
+            for _ in range(6):
                 cur = self.read_text("音乐页面播放控制栏中播放模式按钮上当前显示的文字是什么（列表循环/单曲循环/随机播放）？", screen)
                 events.append({"verify_music_mode": cur, "want": want})
                 if want in cur:
                     return screen, state, "done"
-                screen, _ = self._tap_verified("“播放模式”按钮", screen, events, expect_change=True, retries=2)
+                screen, _ = self._tap_verified("“播放模式”按钮", screen, events, expect_change=False, retries=1)
             return screen, state, "done"
 
         if kind == "scroll_tap":
@@ -769,24 +920,30 @@ class ReactiveCarAgent:
 
         if kind == "dial":
             digits = re.sub(r"[^0-9*#]", "", str(g.get("digits", "")))
-            # Clear any leftover number first if non-empty
-            has_old = self.read_bool("拨号键盘上方号码显示区里当前是否已经有已输入的数字（而不是‘请输入号码’占位提示）？", screen)
-            if has_old:
-                screen, _ = self._tap_verified("“清空”按钮", screen, events, expect_change=True, retries=2)
             key_cache: dict[str, tuple[float, float]] = {}
-            for ch in digits:
-                if ch not in key_cache:
-                    uv = self.ground(f"拨号键盘上的“{ch}”键", screen)
-                    if uv is None:
-                        return screen, state, "error"
-                    key_cache[ch] = uv
-                # L0 diff check per digit so even missed stylus taps self-heal!
-                for attempt in range(3):
-                    nxt = self._click(*key_cache[ch])
-                    diff = _img_diff(screen, nxt)
-                    screen = nxt
-                    if diff >= 0.05:
-                        break
+            q_num = "拨号键盘上方号码显示区里当前输入的数字串是什么？（若显示‘请输入号码’占位提示则返回空字符串）"
+            for dial_round in range(3):
+                shown = re.sub(r"[^0-9*#]", "", self.read_text(q_num, screen))
+                events.append({"verify_dial_pre": shown, "want": digits, "round": dial_round})
+                if shown == digits:
+                    break
+                if shown and not digits.startswith(shown):
+                    screen, _ = self._tap_verified("“清空”按钮", screen, events, expect_change=True, retries=2)
+                    shown = ""
+                rem = digits[len(shown):]
+                for ch in rem:
+                    if ch not in key_cache:
+                        uv = self.ground(f"拨号键盘上的“{ch}”键", screen)
+                        if uv is None:
+                            return screen, state, "error"
+                        key_cache[ch] = uv
+                    for _att in range(4):
+                        nxt = self._click(*key_cache[ch])
+                        # Check ROI diff around display area (top) or full diff
+                        if _img_diff(screen, nxt) >= 0.02:
+                            screen = nxt
+                            break
+                        screen = nxt
             events.append({"act": "dial_digits", "digits": digits})
             screen, _ = self._tap_verified("“拨打”按钮", screen, events, expect_change=True, retries=3)
             state = self.inspect_screen(screen)

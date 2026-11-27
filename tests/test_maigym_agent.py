@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from PIL import Image
 
+from tablet_tap.agent.car_reactive_agent import ReactiveCarAgent
 from tablet_tap.agent.device import FakeDevice
 from tablet_tap.agent.maigym_agent import MaiGymMultiStepAgent
 from tablet_tap.agent.maigym_agent import build_multistep_messages
@@ -82,3 +83,45 @@ def test_agent_not_found_terminate_failed() -> None:
     assert res.status == "failure"
     assert "陈老王" in res.answer
     assert dev.actions == []
+
+
+def test_reactive_agent_safety_guardrail_zero_clicks(monkeypatch) -> None:
+    dev = FakeDevice([_blank()], can_type=False)
+    agent = ReactiveCarAgent(dev, grounder_url="http://mock/v1", grounder_model="mai-gym-9b-v3-s273", settle_s=0.0)
+    monkeypatch.setattr(
+        agent,
+        "compile_goals",
+        lambda _instr: {"safety_block": True, "safety_reason": "恢复出厂设置属不可逆高危操作", "goals": []},
+    )
+    log = agent.run("帮我恢复出厂设置")
+    assert log.status == "need_user"
+    assert log.clicks == 0
+    assert dev.actions == []
+
+
+def test_reactive_agent_toggle_idempotent_closed_loop(monkeypatch) -> None:
+    dev = FakeDevice([_blank((240, 240, 240)), _blank((220, 220, 220))], can_type=False)
+    agent = ReactiveCarAgent(dev, grounder_url="http://mock/v1", grounder_model="mai-gym-9b-v3-s273", settle_s=0.0)
+    monkeypatch.setattr(
+        agent,
+        "compile_goals",
+        lambda _instr: {
+            "safety_block": False,
+            "safety_reason": "",
+            "goals": [{"domain": "climate", "kind": "toggle", "target": "“前除霜”按钮", "want_on": True}],
+        },
+    )
+    monkeypatch.setattr(
+        agent,
+        "inspect_screen",
+        lambda _img: {"page": "climate", "has_call_overlay": False, "settings_cat": "", "settings_sub": "", "sub_tab": ""},
+    )
+    bool_states = iter([False, True])
+    monkeypatch.setattr(agent, "read_bool", lambda _q, _img: next(bool_states))
+    monkeypatch.setattr(agent, "ground", lambda _t, _img: (0.51, 0.47))
+
+    log = agent.run("打开前除霜")
+    assert log.status == "success"
+    assert log.clicks == 1
+    assert len(dev.actions) == 1
+    assert dev.actions[0]["action"] == "click"

@@ -28,8 +28,7 @@ from playwright.sync_api import sync_playwright
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, "/home/phl/workspace/tablet_tap")
 
 import car_long_agent as cla  # noqa: E402
 
@@ -43,7 +42,7 @@ def sim_camera(img: np.ndarray, seed: int) -> np.ndarray:
     _, jpg = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 80])
     return cv2.resize(cv2.imdecode(jpg, cv2.IMREAD_COLOR), FEED, interpolation=cv2.INTER_CUBIC)
 
-INDEX_HTML = REPO_ROOT / "android" / "car_hmi" / "assets" / "www" / "index.html"
+INDEX_HTML = pathlib.Path("/home/phl/workspace/tablet_tap/android/car_hmi/assets/www/index.html")
 W, H = 1920, 1200
 
 

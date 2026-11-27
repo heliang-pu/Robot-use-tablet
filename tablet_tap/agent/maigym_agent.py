@@ -25,6 +25,7 @@ import re
 import time
 from typing import Any
 
+import numpy as np
 from PIL import Image
 import requests
 
@@ -93,6 +94,30 @@ def img_to_b64(img: Image.Image) -> str:
     buf = io.BytesIO()
     img.convert("RGB").save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def _img_diff(a: Image.Image, b: Image.Image) -> float:
+    """两帧 RGB 图像均值像素绝对差（用于纯视觉防卡死检测）。"""
+    aa = np.asarray(a.convert("RGB"), dtype=np.float32)
+    bb = np.asarray(b.convert("RGB"), dtype=np.float32)
+    if aa.shape != bb.shape:
+        return 255.0
+    return float(np.mean(np.abs(aa - bb)))
+
+
+def _roi_diff(a: Image.Image, b: Image.Image, u: float, v: float, radius: int = 80) -> float:
+    """围绕点击点 (u, v) 局部窗口内的平均像素差。"""
+    aa = np.asarray(a.convert("RGB"), dtype=np.float32)
+    bb = np.asarray(b.convert("RGB"), dtype=np.float32)
+    if aa.shape != bb.shape:
+        return 255.0
+    h, w = aa.shape[:2]
+    cx, cy = int(round(u * w)), int(round(v * h))
+    x0, x1 = max(0, cx - radius), min(w, cx + radius)
+    y0, y1 = max(0, cy - radius), min(h, cy + radius)
+    if x1 <= x0 or y1 <= y0:
+        return 0.0
+    return float(np.mean(np.abs(aa[y0:y1, x0:x1] - bb[y0:y1, x0:x1])))
 
 
 def to_uv(coord: list[float] | tuple[float, float]) -> tuple[float, float]:
@@ -165,19 +190,19 @@ class StepEvent:
 
 
 class MaiGymMultiStepAgent:
-    """基于 MAI-Gym-9B（或微调版 carhmi-v2）的原生端到端多步视觉代理。"""
+    """基于 MAI-Gym-9B（或微调版 carhmi-v3）的原生端到端多步视觉代理。"""
 
     def __init__(
         self,
         device: Device,
         *,
         base_url: str = "http://127.0.0.1:18809/v1",
-        model: str = "mai-gym-9b-v2",
+        model: str = "mai-gym-9b-v3-s273",
         api_key: str = "EMPTY",
         max_steps: int = 26,
         keep_last_images: int = 2,
         enable_thinking: bool = False,
-        max_tokens: int = 256,
+        max_tokens: int = 384,
         settle_s: float = 0.5,
         note: str = MULTISTEP_NOTE,
         chat_fn: Callable[[list[dict[str, Any]]], str] | None = None,
@@ -230,8 +255,11 @@ class MaiGymMultiStepAgent:
     def run(self, instruction: str) -> AgentResult:
         """端到端闭环执行自然语言多步指令，返回兼容项目的 AgentResult。"""
         self.last_events = []
-        screenshots_b64: list[str] = [img_to_b64(self.device.screenshot())]
+        cur_img = self.device.screenshot()
+        screenshots_b64: list[str] = [img_to_b64(cur_img)]
         assistant_turns: list[str] = []
+        last_clicks: list[tuple[float, float]] = []
+        stuck_notices: dict[int, str] = {}
 
         for step in range(1, self.max_steps + 1):
             messages = build_multistep_messages(
@@ -241,6 +269,8 @@ class MaiGymMultiStepAgent:
                 keep_last_images=self.keep_last_images,
                 note=self.note,
             )
+            if step in stuck_notices:
+                messages[-1]["content"].append({"type": "text", "text": stuck_notices[step]})
             try:
                 raw = self._call_llm(messages)
             except Exception as exc:
@@ -303,8 +333,19 @@ class MaiGymMultiStepAgent:
 
             if self.settle_s > 0:
                 time.sleep(self.settle_s)
+            nxt_img = self.device.screenshot()
+            if atype in ("click", "double_click", "long_press") and isinstance(action.get("coordinate"), (list, tuple)) and len(action["coordinate"]) == 2:
+                cx, cy = float(action["coordinate"][0]), float(action["coordinate"][1])
+                fdiff = _img_diff(cur_img, nxt_img)
+                rdiff = _roi_diff(cur_img, nxt_img, max(0.0, min(1.0, cx / COORD_SCALE)), max(0.0, min(1.0, cy / COORD_SCALE)), radius=80)
+                if fdiff < 0.15 and rdiff < 0.8 and last_clicks and abs(cx - last_clicks[-1][0]) < 25 and abs(cy - last_clicks[-1][1]) < 25:
+                    stuck_notices[step + 1] = "[视觉提示：连续两次点击同一位置画面毫无变化，说明可能已在目标页面/已达边界或坐标偏了，请勿重复点这里，观察当前画面换其他动作！]"
+                last_clicks.append((cx, cy))
+            else:
+                last_clicks.clear()
+            cur_img = nxt_img
             assistant_turns.append(raw.strip())
-            screenshots_b64.append(img_to_b64(self.device.screenshot()))
+            screenshots_b64.append(img_to_b64(cur_img))
 
         return AgentResult(status="max_steps", steps=self.max_steps, answer=f"超过最大步数 {self.max_steps}")
 

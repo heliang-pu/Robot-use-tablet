@@ -74,6 +74,8 @@ def bucket_name(task_type: str) -> str:
         return "ground"
     if task_type.startswith("readout"):
         return "readout"
+    if task_type.startswith("goal_compiler"):
+        return "gc"
     return "other"
 
 

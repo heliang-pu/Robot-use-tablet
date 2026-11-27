@@ -25,7 +25,7 @@ import requests
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
+sys.path.insert(0, "/home/phl/workspace/tablet_tap")
 import run_bench as rb  # noqa: E402
 from tablet_tap.agent import by_steps as bs  # noqa: E402
 
